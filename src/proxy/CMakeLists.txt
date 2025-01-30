@@ -5,7 +5,7 @@
 file( GLOB metastore_source metastore/*.cc )
 add_library( ncloud_metastore STATIC EXCLUDE_FROM_ALL ${metastore_source} )
 add_dependencies( ncloud_metastore hiredis-cli )
-target_link_libraries( ncloud_metastore ncloud_common hiredis event )
+target_link_libraries( ncloud_metastore ncloud_common hiredis hiredis_ssl event OpenSSL::SSL OpenSSL::Crypto )
 
 ###################
 ## Proxy Staging ##
