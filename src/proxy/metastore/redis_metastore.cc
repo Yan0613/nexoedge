@@ -67,6 +67,7 @@ RedisMetaStore::RedisMetaStore() {
             _withSSL = redisInitiateSSLWithContext(_cxt, _sslCxt) == REDIS_OK; 
         } else {
             LOG(ERROR) << "Failed to init SSL res = " << sslCxtInitRes;
+            exit(1);
         }
     }
 
