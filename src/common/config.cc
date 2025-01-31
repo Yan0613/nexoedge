@@ -293,6 +293,11 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
                 LOG(ERROR) << "Port number for metastore must be within 0 and 65536";
                 exit(-1);
             }
+            _proxy.metastore.redis.ssl.caCertPath = readString(_proxyPt, "metastore.ssl_ca_cert_path");
+            _proxy.metastore.redis.ssl.trustedCertsDir = readString(_proxyPt, "metastore.ssl_trusted_certs_dir");
+            _proxy.metastore.redis.ssl.clientCertPath = readString(_proxyPt, "metastore.ssl_client_cert_path");
+            _proxy.metastore.redis.ssl.clientKeyPath = readString(_proxyPt, "metastore.ssl_client_key_path");
+            _proxy.metastore.redis.ssl.domainName = readString(_proxyPt, "metastore.ssl_domain_name");
             break;
         default:
             break;
@@ -720,6 +725,31 @@ unsigned short Config::getProxyMetaStorePort() const {
     return _proxy.metastore.redis.port;
 }
 
+std::string Config::getProxyMetaStoreSSLCACertPath() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.ssl.caCertPath;
+}
+
+std::string Config::getProxyMetaStoreSSLTrustedCertsDir() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.ssl.trustedCertsDir;
+}
+
+std::string Config::getProxyMetaStoreSSLClientCertPath() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.ssl.clientCertPath;
+}
+
+std::string Config::getProxyMetaStoreSSLClientKeyPath() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.ssl.clientKeyPath;
+}
+
+std::string Config::getProxyMetaStoreSSLDomainName() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.ssl.domainName;
+}
+
 int Config::getProxyNumZmqThread() const {
     assert(!_proxyPt.empty());
     return _proxy.misc.numZmqThread;
@@ -1008,8 +1038,18 @@ void Config::printConfig() const {
             length += snprintf(buf + length, bufSize - length,
                 "   - IP                      : %s\n"
                 "   - Port                    : %d\n"
+                "   - SSL/TLS CA              : %s\n"
+                "   - SSL/TLS Trusted Certs   : %s\n"
+                "   - SSL/TLS Client Cert     : %s\n"
+                "   - SSL/TLS Client Key      : %s\n"
+                "   - SSL/TLS Domain name     : %s\n"
                 , getProxyMetaStoreIP().c_str()
                 , getProxyMetaStorePort()
+                , getProxyMetaStoreSSLCACertPath().c_str()
+                , getProxyMetaStoreSSLTrustedCertsDir().c_str()
+                , getProxyMetaStoreSSLClientCertPath().c_str()
+                , getProxyMetaStoreSSLClientKeyPath().c_str()
+                , getProxyMetaStoreSSLDomainName().c_str()
             );
             break;
         }

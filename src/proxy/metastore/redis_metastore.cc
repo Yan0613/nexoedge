@@ -30,6 +30,8 @@ static std::tuple<int, std::string, int> extractJournalFieldKeyParts(const char 
 
 RedisMetaStore::RedisMetaStore() {
     Config &config = Config::getInstance();
+
+    // initialize a connection to Redis
     _cxt = NULL;
     _cxt = redisConnect(config.getProxyMetaStoreIP().c_str(), config.getProxyMetaStorePort());
     if (_cxt == NULL || _cxt->err) {
@@ -41,13 +43,51 @@ RedisMetaStore::RedisMetaStore() {
         }
         exit(1);
     }
+
+    // initialize SSL/TLS if the required configurations are available (best effort)
+    _sslCxt = NULL;
+    _withSSL = false;
+    redisSSLContextError sslCxtInitRes = REDIS_SSL_CTX_NONE;
+    // check for SSL/TLS configurations
+    std::string ca = config.getProxyMetaStoreSSLCACertPath();
+    std::string trustedCertsDir = config.getProxyMetaStoreSSLTrustedCertsDir();
+    std::string clientCert = config.getProxyMetaStoreSSLClientCertPath();
+    std::string clientKey = config.getProxyMetaStoreSSLClientKeyPath();
+    std::string sniDomainName = config.getProxyMetaStoreSSLDomainName();
+    const char *caInput = ca.empty()? NULL : ca.c_str();
+    const char *trustedCertsDirInput = trustedCertsDir.empty()? NULL : trustedCertsDir.c_str();
+    const char *clientCertInput = clientCert.empty()? NULL : clientCert.c_str();
+    const char *clientKeyInput = clientKey.empty()? NULL : clientKey.c_str();
+    const char *sniDomainNameInput = sniDomainName.empty()? NULL : sniDomainName.c_str();
+    if (!ca.empty() || !trustedCertsDir.empty() || (!clientCert.empty() && !clientKey.empty())) {
+        // initialize the SSL/TLS context for hiredis
+        _sslCxt = redisCreateSSLContext(caInput, trustedCertsDirInput, clientCertInput, clientKeyInput, sniDomainNameInput, &sslCxtInitRes);
+        // tell hiredis to negotiate SSL/TLS based on the context
+        if (_sslCxt != NULL && sslCxtInitRes == REDIS_SSL_CTX_NONE) {
+            _withSSL = redisInitiateSSLWithContext(_cxt, _sslCxt) == REDIS_OK; 
+        } else {
+            LOG(ERROR) << "Failed to init SSL res = " << sslCxtInitRes;
+            exit(1);
+        }
+    }
+
+    // initialize the internal variables (on metastore scan states)
     _taskScanIt = "0";
     _endOfPendingWriteSet = true;
-    LOG(INFO) << "Redis metastore connection init";
+
+    LOG(INFO) << "Redis metastore connection init (with SSL/TLS = " << _withSSL << ")";
 }
 
 RedisMetaStore::~RedisMetaStore() {
     redisFree(_cxt);
+    redisFreeSSLContext(_sslCxt);
+}
+
+void RedisMetaStore::reconnect() {
+    redisReconnect(_cxt);
+    if (_withSSL) {
+        _withSSL = redisInitiateSSLWithContext(_cxt, _sslCxt) == REDIS_OK; 
+    }
 }
 
 bool RedisMetaStore::putMeta(const File &f) {
@@ -71,7 +111,7 @@ bool RedisMetaStore::putMeta(const File &f) {
     } else if (vr == NULL) {
         LOG(ERROR) << "Failed to get the current version of file " << f.name << " due to Redis connection error";
         freeReplyObject(vr);
-        redisReconnect(_cxt);
+        reconnect();
         return false;
     }
 
@@ -93,7 +133,7 @@ bool RedisMetaStore::putMeta(const File &f) {
         );
         if (r == NULL || strncmp(r->str,"OK", 2) != 0) {
             if (r == NULL)
-                redisReconnect(_cxt);
+                reconnect();
             LOG(ERROR) << "Failed to backup the previous version " << f.version - 1 << " metadata for file " << f.name;
             freeReplyObject(r);
             return false;
@@ -145,7 +185,7 @@ bool RedisMetaStore::putMeta(const File &f) {
             LOG(ERROR) << "Failed to find the previous version " << f.version << " record for file " << f.name << ", type " << (int) vr->type << " elements " << vr->elements;
             freeReplyObject(vr);
             if (vr == NULL)
-                redisReconnect(_cxt);
+                reconnect();
             return false;
         }
         // use the versioned file key
@@ -295,7 +335,7 @@ bool RedisMetaStore::putMeta(const File &f) {
         if (redisGetReply(_cxt, (void**) &r) != REDIS_OK) {
             LOG(ERROR) << "Redis reply with error, " << (r? r->str : "NULL");
             if (r == NULL) {
-                redisReconnect(_cxt);
+                reconnect();
             }
             freeReplyObject(r);
             r = 0;
@@ -347,7 +387,7 @@ bool RedisMetaStore::getMeta(File &f, int getBlocks) {
 
     // check if get is successful
     if (r == NULL) {
-        redisReconnect(_cxt);
+        reconnect();
         LOG(WARNING) << "Failed to get metadata for file " << f.name;
         return false;
     }
@@ -482,7 +522,7 @@ bool RedisMetaStore::getMeta(File &f, int getBlocks) {
         if (redisGetReply(_cxt, (void**) &r) != REDIS_OK) {
             LOG(ERROR) << "Redis reply with error, " << (r? r->str : "NULL");
             if (r == NULL) {
-                redisReconnect(_cxt);
+                reconnect();
             }
             freeReplyObject(r);
             r = 0;
@@ -527,12 +567,12 @@ bool RedisMetaStore::getMeta(File &f, int getBlocks) {
 
         int noFpOfs = sizeof(unsigned long int) + sizeof(unsigned int);
         int hasFpOfs = sizeof(unsigned long int) + sizeof(unsigned int) + SHA256_DIGEST_LENGTH;
-        int lengthWithFp = sizeof(unsigned long int) + sizeof(unsigned int) + SHA256_DIGEST_LENGTH + sizeof(int);
+        size_t lengthWithFp = sizeof(unsigned long int) + sizeof(unsigned int) + SHA256_DIGEST_LENGTH + sizeof(int);
         for (size_t i = 0; i < numUniqueBlocks; i++) {
             if (redisGetReply(_cxt, (void**) &r) != REDIS_OK) {
                 LOG(ERROR) << "Redis reply with error, " << (r? r->str : "NULL");
                 if (r == NULL) {
-                    redisReconnect(_cxt);
+                    reconnect();
                 }
                 freeReplyObject(r);
                 r = 0;
@@ -571,12 +611,12 @@ bool RedisMetaStore::getMeta(File &f, int getBlocks) {
         }
 
         int noFpOfs = sizeof(unsigned long int) + sizeof(unsigned int);
-        int lengthWithFp = sizeof(unsigned long int) + sizeof(unsigned int) + SHA256_DIGEST_LENGTH;
+        size_t lengthWithFp = sizeof(unsigned long int) + sizeof(unsigned int) + SHA256_DIGEST_LENGTH;
         for (size_t i = 0; i < numDuplicateBlocks; i++) {
             if (redisGetReply(_cxt, (void**) &r) != REDIS_OK) {
                 LOG(ERROR) << "Redis reply with error, " << (r? r->str : "NULL");
                 if (r == NULL) {
-                    redisReconnect(_cxt);
+                    reconnect();
                 }
                 freeReplyObject(r);
                 r = 0;
@@ -662,7 +702,7 @@ bool RedisMetaStore::deleteMeta(File &f) {
         if (vr == NULL || vr->type != REDIS_REPLY_STRING) {
             LOG(ERROR) << "Failed to find current version number of file " << f.name << " with previous version " << f.version;
             if (vr == NULL) {
-                redisReconnect(_cxt);
+                reconnect();
             }
             freeReplyObject(vr);
             return false;
@@ -692,7 +732,7 @@ bool RedisMetaStore::deleteMeta(File &f) {
                 if (vr == NULL || vr->type != REDIS_REPLY_ARRAY || vr->elements < 2 || vr->element[0]->type != REDIS_REPLY_STRING) {
                     LOG(ERROR) << "Failed to find 2nd latest version of file " << f.name << " for replacing the current version";
                     if (vr == NULL) {
-                        redisReconnect(_cxt);
+                        reconnect();
                     }
                     freeReplyObject(vr);
                     return false;
@@ -710,7 +750,7 @@ bool RedisMetaStore::deleteMeta(File &f) {
                 if (vr == NULL || strncmp(vr->str, "OK", 2) != 0) {
                     LOG(ERROR) << "Failed to rename 2nd latest version of file " << f.name << " to the current version, reply = " << (void*) vr << " result " << (vr? vr->str : "NIL");
                     if (vr == NULL) {
-                        redisReconnect(_cxt);
+                        reconnect();
                     }
                     freeReplyObject(vr);
                     return false;
@@ -762,7 +802,7 @@ bool RedisMetaStore::deleteMeta(File &f) {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer <= 0) {
         LOG(ERROR) << "Failed to delete file metadata of file " << f.name;
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         freeReplyObject(r);
         r = 0;
@@ -788,7 +828,7 @@ bool RedisMetaStore::deleteMeta(File &f) {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer <= 0) {
         LOG(WARNING) << "Failed to delete reverse mapping of file " << f.name << " (" << fidKey;
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         //ret = false;
     }
@@ -819,7 +859,7 @@ bool RedisMetaStore::deleteMeta(File &f) {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer <= 0) {
         LOG(WARNING) << "Failed to delete the prefix record (" << prefix << ") of file " << f.name << " (" << filename << ")";
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         //ret = false;
     }
@@ -857,7 +897,7 @@ bool RedisMetaStore::renameMeta(File &sf, File &df) {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer != 1) {
         LOG(ERROR) << "Failed to rename file from " << sf.name << " (" << (int) sf.namespaceId << ") to " << df.name << " (" << (int) df.namespaceId << "), " << (r == NULL || r->type != REDIS_REPLY_INTEGER? "error" : "target name already exists");
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         freeReplyObject(r);
         r = 0;
@@ -897,7 +937,7 @@ bool RedisMetaStore::renameMeta(File &sf, File &df) {
             , sfname, (size_t) snameLength
         );
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         freeReplyObject(r);
         r = 0;
@@ -916,7 +956,7 @@ bool RedisMetaStore::renameMeta(File &sf, File &df) {
 
     if (r == NULL || r->type == REDIS_REPLY_ERROR) {
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         // undo the rename of file
         r = (redisReply *) redisCommand(
@@ -944,7 +984,7 @@ bool RedisMetaStore::renameMeta(File &sf, File &df) {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer <= 0) {
         LOG(ERROR) << "Failed to delete the prefix record of source file " << sfname << " (" << sfidKey;
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     }
 
@@ -962,7 +1002,7 @@ bool RedisMetaStore::renameMeta(File &sf, File &df) {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer <= 0) {
         LOG(ERROR) << "Failed to add the prefix record of dest file " << dfname << " (" << dfidKey;
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     }
 
@@ -992,7 +1032,7 @@ bool RedisMetaStore::updateTimestamps(const File &f) {
     if (r == NULL || r->type != REDIS_REPLY_STATUS || r->len != 2 || strncmp("OK", r->str, 2) != 0) {
         LOG(ERROR) << "Failed to update timestamps of file " << f.name << " (" << (int) f.namespaceId << "), " << (r == NULL || r->type != REDIS_REPLY_STATUS? "error" : "reply is not \"OK\"");
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         freeReplyObject(r);
         r = 0;
@@ -1206,7 +1246,7 @@ unsigned int RedisMetaStore::getFileList(FileInfo **list, unsigned char namespac
                 if (metar == NULL || metar->type != REDIS_REPLY_ARRAY || metar->elements < 1) {
                     DLOG(INFO) << "No version summary " << cur.name << ", reply type = " << (metar == NULL? -1 : metar->type);
                     if (metar == NULL) {
-                        redisReconnect(_cxt);
+                        reconnect();
                     }
                 } else {
                     size_t total = metar->elements;
@@ -1263,7 +1303,7 @@ unsigned int RedisMetaStore::getFileList(FileInfo **list, unsigned char namespac
         }
     }
     if (r == NULL) {
-        redisReconnect(_cxt);
+        reconnect();
     }
     freeReplyObject(r);
     r = 0;
@@ -1295,7 +1335,7 @@ unsigned int RedisMetaStore::getFolderList(std::vector<std::string> &list, unsig
         if (r == NULL || r->type != REDIS_REPLY_ARRAY || r->elements != 2 || r->element[1]->type != REDIS_REPLY_ARRAY) {
             LOG(ERROR) << "Failed to scan metadata store for folders, r = " << (void *) r << " type = " << (r? r->type : -1) << " elements " << (r? r->elements : -1);
             if (r == NULL) {
-                redisReconnect(_cxt);
+                reconnect();
             }
             freeReplyObject(r);
             return count;
@@ -1309,7 +1349,7 @@ unsigned int RedisMetaStore::getFolderList(std::vector<std::string> &list, unsig
 
         // add the matching folders
         redisReply **listr = r->element[1]->element;
-        ssize_t pfsize = pattern.size();
+        size_t pfsize = pattern.size();
         for (size_t i = 0; i < r->element[1]->elements; i++) {
             // avoid abnormal string with length < pfsize - 1
             if (listr[i]->len < pfsize - 1)
@@ -1348,7 +1388,7 @@ unsigned long int RedisMetaStore::getNumFiles() {
     if (r == NULL || r->type != REDIS_REPLY_INTEGER) {
         LOG(ERROR) << "Failed to get file count";
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     } else {
         count = r->integer;
@@ -1395,7 +1435,7 @@ unsigned long int RedisMetaStore::getNumFilesToRepair() {
     unsigned long int count = okay? r->integer : -1;
 
     if (r == NULL) {
-        redisReconnect(_cxt);
+        reconnect();
     }
 
     freeReplyObject(r);
@@ -1476,7 +1516,7 @@ int RedisMetaStore::getFilesToRepair(int numFiles, File files[]) {
     }
 
     if (r == NULL) {
-        redisReconnect(_cxt);
+        reconnect();
     }
 
     freeReplyObject(r);
@@ -1521,7 +1561,7 @@ bool RedisMetaStore::markFileStatus(const File &file, const char *listName, bool
     if (!ret) {
         LOG(ERROR) << "Failed to " << (set? "add" : "remove") << " file " << file.name << " from the " << opName << " list, " << (r != NULL ? "reply is invalid" : "failed to get reply"); 
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     } else if (r->integer != 1) {
         DLOG(INFO) << "File " << file.name << "(" << filename << ")" << (set? " already" : " not") << " in the " << opName << " list"; 
@@ -1602,7 +1642,7 @@ int RedisMetaStore::getFilesPendingWriteToCloud(int numFiles, File files[]) {
 
     if (!okay) {
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
         return num;
     }
@@ -1623,7 +1663,7 @@ int RedisMetaStore::getFilesPendingWriteToCloud(int numFiles, File files[]) {
     }
 
     if (r == NULL) {
-        redisReconnect(_cxt);
+        reconnect();
     }
 
     freeReplyObject(r);
@@ -1696,7 +1736,7 @@ bool RedisMetaStore::updateFileStatus(const File &file) {
     if (ret == false) {
         LOG(ERROR) << "Failed to update status of file " << file.name << ", [" << (r == 0? -1 : r->type) << "] " << (r == 0? "(NIL)" : r->str);
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     }
 
@@ -1724,7 +1764,7 @@ bool RedisMetaStore::getNextFileForTaskCheck(File &file) {
     if (r == NULL || r->type != REDIS_REPLY_ARRAY || r->elements != 2 || r->element[0]->type != REDIS_REPLY_STRING) {
         LOG(ERROR) << "Failed to get a valid reply for next file to check";
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     } else {
         // update the next iterator
@@ -1814,7 +1854,7 @@ bool RedisMetaStore::addChunkToJournal(const File &file, const Chunk &chunk, int
         if (r == NULL || r->type != REDIS_REPLY_ARRAY || r->elements < 1) {
             LOG(ERROR) << "Failed to add the journal record of chunk " << chunk.getChunkId() << " of file " << file.name << " with namespace " << (int) file.namespaceId;
             freeReplyObject(r);
-            if (r == NULL) redisReconnect(_cxt);
+            if (r == NULL) reconnect();
             return false;
         }
         int numModifiedRecords = 0;
@@ -1904,7 +1944,7 @@ bool RedisMetaStore::addChunkToJournal(const File &file, const Chunk &chunk, int
     if (r == NULL || r->type != REDIS_REPLY_INTEGER || r->integer == -1) {
         freeReplyObject(r);
         LOG(ERROR) << "Failed to add the journal record of chunk " << chunk.getChunkId() << " of file " << file.name << " with namespace " << (int) file.namespaceId;
-        if (r == NULL) redisReconnect(_cxt);
+        if (r == NULL) reconnect();
         return false;
     }
     freeReplyObject(r);
@@ -1975,7 +2015,7 @@ bool RedisMetaStore::updateChunkInJournal(const File &file, const Chunk &chunk, 
     if (!success) {
         freeReplyObject(r);
         LOG(ERROR) << "Failed to " << (deleteRecord? "delete" : "update" ) << " the journal record of chunk " << chunk.getChunkId() << " of file " << file.name << " with namespace " << (int) file.namespaceId << " version " << file.version << " in container " << containerId;
-        if (r == NULL) redisReconnect(_cxt);
+        if (r == NULL) reconnect();
         return false;
     }
 
@@ -1996,7 +2036,7 @@ void RedisMetaStore::getFileJournal(const FileInfo &file, std::vector<std::tuple
     );
     if (r == NULL) {
         LOG(ERROR) << "Failed to get the journal of file " << file.name << " in namespace " << (int) file.namespaceId;
-        redisReconnect(_cxt);
+        reconnect();
         return;
     }
 
@@ -2067,7 +2107,7 @@ int RedisMetaStore::getFilesWithJounal(FileInfo **list) {
     );
 
     if (r == NULL || r->type != REDIS_REPLY_ARRAY) {
-        if (r == NULL) redisReconnect(_cxt);
+        if (r == NULL) reconnect();
         LOG(ERROR) << "Failed to get the list of files with journals, r = " << (void*) r << " reply type = " << (int)(r? r->type : -1) << ".";
         freeReplyObject(r);
         return -1;
@@ -2109,7 +2149,7 @@ bool RedisMetaStore::fileHasJournal(const File &file) {
     );
 
     if (r == NULL) { 
-        redisReconnect(_cxt);
+        reconnect();
         return false;
     }
 
@@ -2203,7 +2243,7 @@ bool RedisMetaStore::getFileName(char name[], File &f) {
         f.name[r->len] = 0;
     }
     if (r == NULL) {
-        redisReconnect(_cxt);
+        reconnect();
     }
     freeReplyObject(r);
     r = 0;
@@ -2259,7 +2299,7 @@ bool RedisMetaStore::lockFile(const File &file, bool lock, const char *type, con
     if (!ret) {
         LOG(ERROR) << "Failed to " << (lock? "" : "un") << name << " file " << file.name << ", " << (r != NULL ? (r->type == REDIS_REPLY_INTEGER? "repeated operation" : "reply is invalid") : "failed to get reply"); 
         if (r == NULL) {
-            redisReconnect(_cxt);
+            reconnect();
         }
     }
 

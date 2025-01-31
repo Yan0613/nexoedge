@@ -53,23 +53,26 @@ ExternalProject_Add (
     "hiredis-cli" 
     PREFIX "third-party/hiredis"
     EXCLUDE_FROM_ALL true
-    URL ${PROJECT_THIRD_PARTY_LIB_DIR}/hiredis-0.13.3.tar.gz
-    URL_MD5 43dca1445ec6d3b702821dba36000279
+    URL ${PROJECT_THIRD_PARTY_LIB_DIR}/hiredis-1.2.0.tar.gz
+    URL_MD5 119767d178cfa79718a80c83e0d0e849 
     UPDATE_COMMAND ""
     BUILD_IN_SOURCE 1
     CONFIGURE_COMMAND ""
-    BUILD_COMMAND make libhiredis.a
+    BUILD_COMMAND make USE_SSL=1 libhiredis.a libhiredis_ssl.a
     INSTALL_DIR ""
     INSTALL_COMMAND 
         mkdir -p ${THIRD_PARTY_INCLUDE_CONFIG}/hiredis/adapters ${THIRD_PARTY_LIB_CONFIG} 
         COMMAND cp ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/hiredis.h 
+            ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/hiredis_ssl.h
             ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/read.h
             ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/sds.h
             ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/async.h
+            ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/alloc.h
             ${THIRD_PARTY_INCLUDE_CONFIG}/hiredis
         COMMAND cp ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/adapters/libevent.h
             ${THIRD_PARTY_INCLUDE_CONFIG}/hiredis/adapters
         COMMAND cp ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/libhiredis.a
+            ${PROJECT_BINARY_DIR}/third-party/hiredis/src/hiredis-cli/libhiredis_ssl.a
             ${THIRD_PARTY_LIB_CONFIG}/
 )
 

@@ -7,6 +7,7 @@
 #include <string>
 
 #include <hiredis/hiredis.h>
+#include <hiredis/hiredis_ssl.h>
 #include "metastore.hh"
 
 #include <boost/uuid/uuid.hpp>
@@ -153,11 +154,14 @@ public:
 
 private:
     redisContext *_cxt;
+    redisSSLContext *_sslCxt;
+    bool _withSSL;
     std::mutex _lock;
     
     std::string _taskScanIt;
     bool _endOfPendingWriteSet;
 
+    void reconnect();
 
     int genFileKey(unsigned char namespaceId, const char *name, int nameLength, char key[]);
     int genVersionedFileKey(unsigned char namespaceId, const char *name, int nameLength, int version, char key[]);

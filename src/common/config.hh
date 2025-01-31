@@ -96,6 +96,11 @@ public:
     int getProxyMetaStoreType() const;
     std::string getProxyMetaStoreIP() const;
     unsigned short getProxyMetaStorePort() const;
+    std::string getProxyMetaStoreSSLCACertPath() const;
+    std::string getProxyMetaStoreSSLTrustedCertsDir() const;
+    std::string getProxyMetaStoreSSLClientCertPath() const;
+    std::string getProxyMetaStoreSSLClientKeyPath() const;
+    std::string getProxyMetaStoreSSLDomainName() const;
     // proxy.misc
     int getProxyNumZmqThread() const;
     bool isRepairAtProxy() const;
@@ -275,6 +280,13 @@ private:
             struct {
                 std::string ip;
                 unsigned short port;
+                struct {
+                    std::string caCertPath;
+                    std::string trustedCertsDir;
+                    std::string clientKeyPath;
+                    std::string clientCertPath;
+                    std::string domainName;
+                } ssl;
             } redis;
         } metastore;
         struct {
