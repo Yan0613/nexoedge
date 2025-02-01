@@ -134,16 +134,18 @@ In ``agent.ini``,
     - ``flush_on_close``: Whether to flush and sync data before a file stream closes for local file system containers
     - ``register_to_proxy``: Whether to register to the list of proxies (in ``general.ini``) on start 
 - ``container[00-99]``: Data containers
-    - ``type``: Container type; local file system: 'fs', Aliyun: 'alibaba', AWS S3: 'aws', Azure: 'azure'
+    - ``type``: Container type; local file system: 'fs', Aliyun: 'alibaba', AWS S3: 'aws', Azure: 'azure', Generic S3: 'generic_s3'
     - ``id``: Container ID, must be *UNIQUE* among all containers of all agents
     - ``url``: Location for chunk storage and access
         - Local file system: Directory path 
-        - Aliyun and AWS S3: Bucket name
+        - Aliyun, AWS S3, and generic S3: Bucket name
         - Azure: Storage account connection string
-    - ``region``: Region name for Aliyun and AWS S3, e.g. cn-hongkong, ap-east-1
-    - ``key_id``: Key ID for Aliyun and AWS S3
-    - ``key``: Secret key for Aliyun and AWS S3
+    - ``region``: Region name for Aliyun, AWS S3, and generic S3, e.g. cn-hongkong, ap-east-1
+    - ``key_id``: Key ID for Aliyun, AWS S3, and generic S3
+    - ``key``: Secret key for Aliyun, AWS S3, and generic S3
     - ``capacity``: Container capacity
+    - ``endpoint``: Endpoint (e.g., https://localhost:59002) for generic S3
+    - ``verify_ssl``: Whether to verify the SSL/TLS certificate for an HTTPS endpoint (e.g., https://localhost:59002) for generic S3
 
 
 Storage Class Configuration

@@ -4,3 +4,4 @@
 #include "alicloud.hh"
 #include "aws_s3.hh"
 #include "azure_blob.hh"
+#include "generic_s3.hh"

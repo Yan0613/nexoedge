@@ -42,25 +42,21 @@ const char *channel[] = {
 };
 
 const char *host_types[] = {
-    "On-prem",
+    "On-prem",       // 0
     "Alibaba",
     "AWS",
     "Azure",
-    "Tencent",
-    "Google",
-    "Huawei",
+    "Generic_S3",    // 5
 
     "Unknown"
 };
 
 const char *storage_types[] = {
-    "Local",
+    "Local",         // 0
     "Alibaba",
     "AWS",
     "Azure",
-    "Tencent",
-    "Google",
-    "Huawei",
+    "Generic_S3",    // 5
 
     "Unknown"
 };
