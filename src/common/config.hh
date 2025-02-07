@@ -67,6 +67,8 @@ public:
     std::string getContainerKey(int i) const;
     std::string getContainerHttpProxyIP(int i) const;
     unsigned short getContainerHttpProxyPort(int i) const;
+    std::string getContainerEndpoint(int i) const;
+    bool getContainerVerifySSL(int i) const;
     // agent.misc
     int getAgentNumWorkers() const;
     int getAgentNumZmqThread() const;
@@ -197,6 +199,8 @@ private:
         std::string region;
         std::string key;
         std::string keyId;
+        std::string endpoint;
+        bool verifySSL = true;
         struct {
             std::string ip;
             unsigned short port;

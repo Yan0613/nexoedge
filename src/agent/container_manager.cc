@@ -26,6 +26,8 @@ ContainerManager::ContainerManager() {
         std::string region = config.getContainerRegion(i);
         std::string proxyIP = config.getContainerHttpProxyIP(i);
         unsigned short  proxyPort = config.getContainerHttpProxyPort(i);
+        std::string endpoint = config.getContainerEndpoint(i);
+        bool verifySSL = config.getContainerVerifySSL(i);
         switch (ctype) {
         case ContainerType::FS_CONTAINER:
             _containerPtrs[i] = new FsContainer(cid, cstr.c_str(), capacity);
@@ -42,6 +44,10 @@ ContainerManager::ContainerManager() {
         case ContainerType::AZURE_CONTAINER:
             _containerPtrs[i] = new AzureContainer(cid, cstr, key, capacity, proxyIP, proxyPort);
             DLOG(INFO) << "Azure container with id = " << cid << " capacity = " << capacity;
+            break;
+        case ContainerType::GENERIC_S3_CONTAINER:
+            _containerPtrs[i] = new GenericS3Container(cid, cstr, region, keyId, key, capacity, endpoint, proxyIP, proxyPort, /* useHTTP */ false, verifySSL);
+            DLOG(INFO) << "Generic S3 container with id = " << cid << " capacity = " << capacity;
             break;
         default:
             LOG(ERROR) << "Container type " << ctype << " not supported! (container no. = " << i << ")";

@@ -288,14 +288,8 @@ unsigned char Coordinator::checkHostType() {
 
     if (checkHostTypeAction("http://100.100.100.200", &type, HOST_TYPE_ALI)) {
         // alibaba
-    } else if (checkHostTypeAction("http://metadata.google.internal", &type, HOST_TYPE_GCP)) {
-        // gcp
-    } else if (checkHostTypeAction("http://metadata.tencentyun.com", &type, HOST_TYPE_TENCENT)) {
-        // tencent
     } else if (checkHostTypeAction("http://169.254.169.254", &type)) {
         // aws, azure
-    } else if (checkHostTypeAction("http://169.254.169.254", &type, HOST_TYPE_HUAWEI)) {
-        // huawei
     } else {
         type = HostType::HOST_TYPE_ON_PREM;
     }

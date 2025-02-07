@@ -15,7 +15,7 @@
 
 class AwsContainer : public Container {
 public:
-    AwsContainer(int id, std::string bucketName, std::string region, std::string keyId, std::string key, unsigned long int capacity, std::string endpoint = "", std::string httpProxyIP = "", unsigned short httpProxyPort = 0, bool useHttp = false);
+    AwsContainer(int id, std::string bucketName, std::string region, std::string keyId, std::string key, unsigned long int capacity, std::string endpoint = "", std::string httpProxyIP = "", unsigned short httpProxyPort = 0, bool useHttp = false, bool verifySSL = true);
     ~AwsContainer();
 
     /**

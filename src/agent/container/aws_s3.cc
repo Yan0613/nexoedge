@@ -23,7 +23,7 @@
 
 #define OBJ_PATH_MAX (128)
 
-AwsContainer::AwsContainer(int id, std::string bucketName, std::string region, std::string keyId, std::string key, unsigned long int capacity, std::string endpoint, std::string httpProxyIP, unsigned short httpProxyPort, bool useHttp) :
+AwsContainer::AwsContainer(int id, std::string bucketName, std::string region, std::string keyId, std::string key, unsigned long int capacity, std::string endpoint, std::string httpProxyIP, unsigned short httpProxyPort, bool useHttp, bool verifySSL) :
         Container(id, capacity) {
 
     _cred = Aws::Auth::AWSCredentials(keyId.c_str(), key.c_str());
@@ -37,6 +37,10 @@ AwsContainer::AwsContainer(int id, std::string bucketName, std::string region, s
     if (useHttp) {
         clientConfig.scheme = Aws::Http::Scheme::HTTP;
     }
+
+    // override SSL certificate verification if needed
+    clientConfig.verifySSL = verifySSL;
+
     std::shared_ptr<Aws::S3::S3EndpointProviderBase> endpoints = Aws::MakeShared<Aws::S3::S3EndpointProvider>(Aws::S3::S3Client::ALLOCATION_TAG);
     _client = Aws::S3::S3Client (_cred, endpoints, clientConfig);
 

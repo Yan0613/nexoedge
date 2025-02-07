@@ -18,22 +18,23 @@ const char *Config::ContainerTypeName[] = {
     "Alibaba",
     "AWS",
     "Azure",
+    "Generic_S3",          // 5
 
     "Unknown"
 };
 
 const char *Config::LogLevelName[] = {
-    "INFO",
+    "INFO",                // 0
     "WARNING",
     "ERROR",
     "FATAL",
 
-    "Unknown"
+    "Unknown"              // 5
 };
 
 // see DistributionPolicy in common/define.hh
 const char *Config::DistributionPolicyName[] = {
-    "Static",
+    "Static",              // 0
     "Round-Robin",
     "Least-Used",
 
@@ -42,18 +43,18 @@ const char *Config::DistributionPolicyName[] = {
 
 // see ChunkScanSamplingPolicy in common/define.hh
 const char *Config::ChunkScanSamplingPolicyName[] = {
-    "None",
+    "None",               // 0
     "Chunk-level",
     "Stripe-level",
     "File-level",
-    "Container-level",
+    "Container-level",    // 5
 
     "Unknown"
 };
 
 // see MetaStore in common/define.hh
 const char *Config::MetaStoreName[] = {
-    "Redis",
+    "Redis",              // 0
 
     "Unknown"
 };
@@ -210,7 +211,8 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
             }
             if (
                 _agent.containers[i].type == ContainerType::AWS_CONTAINER ||
-                _agent.containers[i].type == ContainerType::ALI_CONTAINER
+                _agent.containers[i].type == ContainerType::ALI_CONTAINER ||
+                _agent.containers[i].type == ContainerType::GENERIC_S3_CONTAINER
             ) {
                 sprintf(pname, "container%02d.region", i + 1);
                 _agent.containers[i].region = readString(_agentPt, pname);
@@ -220,14 +222,16 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
             if (
                 _agent.containers[i].type == ContainerType::AWS_CONTAINER ||
                 _agent.containers[i].type == ContainerType::ALI_CONTAINER ||
-                _agent.containers[i].type == ContainerType::AZURE_CONTAINER
+                _agent.containers[i].type == ContainerType::AZURE_CONTAINER ||
+                _agent.containers[i].type == ContainerType::GENERIC_S3_CONTAINER
             ) {
                 sprintf(pname, "container%02d.key", i + 1);
                 _agent.containers[i].key = readString(_agentPt, pname);
             }
             if (
                 _agent.containers[i].type == ContainerType::AWS_CONTAINER ||
-                _agent.containers[i].type == ContainerType::AZURE_CONTAINER
+                _agent.containers[i].type == ContainerType::AZURE_CONTAINER ||
+                _agent.containers[i].type == ContainerType::GENERIC_S3_CONTAINER
             ) {
                 try {
                     sprintf(pname, "container%02d.http_proxy_ip", i + 1);
@@ -238,6 +242,18 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
                     // no proxy provided
                     _agent.containers[i].httpProxy.ip = "";
                     _agent.containers[i].httpProxy.port = 0; 
+                }
+            }
+            if (
+                _agent.containers[i].type == ContainerType::GENERIC_S3_CONTAINER
+            ) {
+                sprintf(pname, "container%02d.endpoint", i + 1);
+                _agent.containers[i].endpoint = readString(_agentPt, pname);
+                try {
+                    sprintf(pname, "container%02d.verify_ssl", i + 1);
+                    _agent.containers[i].verifySSL = readBool(_agentPt, pname);
+                } catch (std::exception &e) {
+                    _agent.containers[i].verifySSL = false;
                 }
             }
         }
@@ -582,6 +598,20 @@ unsigned short Config::getContainerHttpProxyPort(int i) const {
     if (i >= _agent.numContainers)
         return 0; 
     return _agent.containers[i].httpProxy.port;
+}
+
+std::string Config::getContainerEndpoint(int i) const {
+    assert(!_agentPt.empty());
+    if (i >= _agent.numContainers)
+        return std::string(); 
+    return _agent.containers[i].endpoint;
+}
+
+bool Config::getContainerVerifySSL(int i) const {
+    assert(!_agentPt.empty());
+    if (i >= _agent.numContainers)
+        return true; 
+    return _agent.containers[i].verifySSL;
 }
 
 int Config::getAgentNumWorkers() const {
@@ -1224,11 +1254,15 @@ void Config::printConfig() const {
                 "   - Url                     : %s\n"
                 "   - Capacity                : %luB\n"
                 "   - Http proxy              : %s\n"
+                "   - Endpoint (generic S3 only): %s\n"
+                "   - Verify SSL (generic S3 only): %s\n"
                 , getContainerId(i)
                 , ContainerTypeName[type]
                 , getContainerPath(i).c_str()
                 , getContainerCapacity(i)
                 , getContainerHttpProxyIP(i).empty()? "" : getContainerHttpProxyIP(i).append(":").append(std::to_string(getContainerHttpProxyPort(i))).c_str()
+                , getContainerEndpoint(i).c_str()
+                , getContainerVerifySSL(i)? "true" : "false"
             );
         }
         LOG(ERROR) << buf;

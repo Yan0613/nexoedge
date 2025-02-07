@@ -118,6 +118,7 @@ enum ContainerType {
     ALI_CONTAINER,
     AWS_CONTAINER,
     AZURE_CONTAINER,
+    GENERIC_S3_CONTAINER,  // 5
 
     UNKNOWN_CONTAINER,
 };

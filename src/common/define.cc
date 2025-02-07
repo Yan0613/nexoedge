@@ -3,7 +3,7 @@
 #include "define.hh"
 
 const char *CodingSchemeName[] = {
-    "RS",
+    "RS",          // 0
 
     "Unknown"
 };
