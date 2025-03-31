@@ -161,6 +161,7 @@ private:
     std::string _taskScanIt;
     bool _endOfPendingWriteSet;
 
+    bool auth();
     void reconnect();
 
     int genFileKey(unsigned char namespaceId, const char *name, int nameLength, char key[]);

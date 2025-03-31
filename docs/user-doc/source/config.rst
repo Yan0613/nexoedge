@@ -79,6 +79,8 @@ In ``proxy.ini``,
     - ``ssl_client_key_path``: Path to an SSL/TLS client cert private key for connections to the metadata store, leave blank if SSL/TLS is not used
     - ``ssl_trusted_certs_dir``: Path to an SSL/TLS-CA-cert-containing directory for connections to the metadata store, leave blank if not used 
     - ``ssl_domain_name``: Domain name of the metadata store for SSL/TLS, leave blank if not used 
+    - ``auth_user``: User name for authentication, leave blank for passwordless access
+    - ``auth_password``: Password for authentication, leave blank for passwordless access
 - ``recovery``: Recovery
     - ``trigger_enabled``: Whether to enable background automatic recovery
     - ``trigger_start_interval``: Time between triggerings of recovery operation (in seconds)
