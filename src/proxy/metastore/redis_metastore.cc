@@ -71,6 +71,9 @@ RedisMetaStore::RedisMetaStore() {
         }
     }
 
+    // authenticate with the metadata store if a pair of username and password is given
+    if (!auth()) { exit(1); }
+
     // initialize the internal variables (on metastore scan states)
     _taskScanIt = "0";
     _endOfPendingWriteSet = true;
@@ -83,11 +86,48 @@ RedisMetaStore::~RedisMetaStore() {
     redisFreeSSLContext(_sslCxt);
 }
 
+bool RedisMetaStore::auth() {
+    Config &config = Config::getInstance();
+    std::string user = config.getProxyMetaStoreUser();
+    std::string password = config.getProxyMetaStorePassword();
+
+    bool success = false;
+    if (!user.empty() && !password.empty()) {
+        redisReply *r = (redisReply*) redisCommand(
+            _cxt
+            , "AUTH %s %s"
+            , user.c_str()
+            , password.c_str()
+        );
+        // retry the command for Redis v6.0 or below for backward compatibility
+        if (r == NULL || r->type == REDIS_REPLY_ERROR) {
+            freeReplyObject(r);
+            r = (redisReply*) redisCommand(
+                _cxt
+                , "AUTH %s"
+                , password.c_str()
+            );
+        }
+        if (r != NULL && (r->type == REDIS_REPLY_STRING || r->type == REDIS_REPLY_STATUS) && strncmp(r->str, "OK", r->len) == 0) {
+            LOG(INFO) << "Authenticated as [" << user << "] with the metadata store!";
+            success = true;
+        } else {
+            LOG(ERROR) << "Failed to authenticate with the metadata store! (" << (void *) r << ", type = " << (r != NULL? r->type : -1) << ")";
+            success = false;
+        }
+        freeReplyObject(r);
+    } else {
+        success = true;
+    }
+    return success;
+}
+
 void RedisMetaStore::reconnect() {
     redisReconnect(_cxt);
     if (_withSSL) {
         _withSSL = redisInitiateSSLWithContext(_cxt, _sslCxt) == REDIS_OK; 
     }
+    if (!auth()) { exit(1); }
 }
 
 bool RedisMetaStore::putMeta(const File &f) {

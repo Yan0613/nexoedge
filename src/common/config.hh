@@ -103,6 +103,8 @@ public:
     std::string getProxyMetaStoreSSLClientCertPath() const;
     std::string getProxyMetaStoreSSLClientKeyPath() const;
     std::string getProxyMetaStoreSSLDomainName() const;
+    std::string getProxyMetaStoreUser() const;
+    std::string getProxyMetaStorePassword() const;
     // proxy.misc
     int getProxyNumZmqThread() const;
     bool isRepairAtProxy() const;
@@ -291,6 +293,10 @@ private:
                     std::string clientCertPath;
                     std::string domainName;
                 } ssl;
+                struct {
+                    std::string user;
+                    std::string password;
+                } auth;
             } redis;
         } metastore;
         struct {

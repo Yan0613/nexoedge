@@ -318,6 +318,8 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
         default:
             break;
         }
+        _proxy.metastore.redis.auth.user = readString(_proxyPt, "metastore.auth_user");
+        _proxy.metastore.redis.auth.password = readString(_proxyPt, "metastore.auth_password");
         // auto recovery
         _proxy.recovery.enabled = readBool(_proxyPt, "recovery.trigger_enabled");
         _proxy.recovery.recoverIntv = std::max(readInt(_proxyPt, "recovery.trigger_start_interval"), 5);
@@ -778,6 +780,16 @@ std::string Config::getProxyMetaStoreSSLClientKeyPath() const {
 std::string Config::getProxyMetaStoreSSLDomainName() const {
     assert(!_proxyPt.empty());
     return _proxy.metastore.redis.ssl.domainName;
+}
+
+std::string Config::getProxyMetaStoreUser() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.auth.user;
+}
+
+std::string Config::getProxyMetaStorePassword() const {
+    assert(!_proxyPt.empty());
+    return _proxy.metastore.redis.auth.password;
 }
 
 int Config::getProxyNumZmqThread() const {
