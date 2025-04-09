@@ -40,8 +40,10 @@ typedef uint32_t                   num_t;
 #define MAX_NUM_WORKERS            (int)(256)
 #define MAX_NUM_NEAR_IP_RANGES     (16)
 
-#define HOUR_IN_SECONDS            (3600)
-//#define HOUR_IN_SECONDS            (30) // for code testing
+#define MINUTE_IN_SECONDS          60;
+#define HOUR_IN_SECONDS            3600;
+#define DAY_IN_SECONDS             86400;
+
 
 // see also CodingSchemeName in common/config.cc
 enum CodingScheme {
@@ -166,6 +168,12 @@ enum MetaStoreType {
     REDIS,
 
     UNKNOWN_METASTORE
+};
+
+enum ImmutablePolicyStoreType {
+    REDIS_IMMUTABLE_POLICY_STORE,
+
+    UNKNOWN_IMMUTABLE_POLICY_STORE
 };
 
 enum MessageDirection {
