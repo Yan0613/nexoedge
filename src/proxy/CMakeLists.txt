@@ -25,6 +25,16 @@ add_library( ncloud_dedup STATIC EXCLUDE_FROM_ALL ${ncloud_dedup_src} )
 add_dependencies( ncloud_dedup google-log )
 target_link_libraries( ncloud_dedup OpenSSL::Crypto glog )
 
+########################
+## Proxy Immutability ##
+########################
+
+# deduplication module
+file( GLOB ncloud_immutability_src immutable/*.cc )
+add_library( ncloud_immutability STATIC EXCLUDE_FROM_ALL ${ncloud_immutability_src} )
+add_dependencies( ncloud_immutability hiredis-cli google-log )
+target_link_libraries( ncloud_immutability ncloud_common ncloud_metastore hiredis hiredis_ssl event OpenSSL::SSL OpenSSL::Crypto glog )
+
 ###########
 ## Proxy ##
 ###########
@@ -32,7 +42,7 @@ target_link_libraries( ncloud_dedup OpenSSL::Crypto glog )
 file( GLOB proxy_source *.cc interfaces/*.cc )
 add_library( ncloud_proxy STATIC EXCLUDE_FROM_ALL ${proxy_source} )
 add_dependencies( ncloud_proxy zero-mq hiredis-cli )
-target_link_libraries( ncloud_proxy ncloud_code ncloud_common ncloud_metastore ncloud_dedup ncloud_staging zmq event OpenSSL::SSL )
+target_link_libraries( ncloud_proxy ncloud_code ncloud_common ncloud_metastore ncloud_dedup ncloud_staging ncloud_immutability zmq event OpenSSL::SSL )
 
 ################
 ## Proxy main ##

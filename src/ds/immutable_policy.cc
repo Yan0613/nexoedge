@@ -7,9 +7,7 @@ using ImmutablePolicyType = ImmutablePolicy::ImmutablePolicyType;
 
 // convert the time from time_t to struct tm
 bool convertTimet2Tm(const time_t tt, struct tm &tm) {
-    gmtime_r(&tt, &tm);
-    if (errno != 0) { return false; }
-    return true;
+    return gmtime_r(&tt, &tm) != nullptr;
 }
 
 ImmutablePolicy::ImmutablePolicy() {
@@ -55,12 +53,12 @@ std::string ImmutablePolicy::getStartDateString() const {
     return convertTimeToRFC7231(date);
 }
 
-bool ImmutablePolicy::setPolicyDuration(const unsigned short days) {
+bool ImmutablePolicy::setDuration(const unsigned short days) {
     _duration = days;
     return true;
 }
 
-unsigned short ImmutablePolicy::getPolicyDuration() const {
+unsigned short ImmutablePolicy::getDuration() const {
     return _duration;
 }
 

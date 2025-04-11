@@ -152,7 +152,7 @@ public:
      **/
     bool fileHasJournal(const File &file);
 
-private:
+protected:
     redisContext *_cxt;
     redisSSLContext *_sslCxt;
     bool _withSSL;

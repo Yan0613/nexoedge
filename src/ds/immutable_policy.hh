@@ -21,6 +21,24 @@ public:
         UNKNOWN_IMMUTABLE_POLICY
     };
 
+    bool operator== (const ImmutablePolicy &rhs) {
+        return 
+            _type == rhs._type
+            && _start == rhs._start
+            && _duration == rhs._duration
+            && _autoRenew == rhs._autoRenew
+        ;
+    }
+
+    bool operator!= (const ImmutablePolicy &rhs) {
+        return 
+            _type != rhs._type
+            || _start != rhs._start
+            || _duration != rhs._duration
+            || _autoRenew != rhs._autoRenew
+        ;
+    }
+
     // type
     /**
      * Set the type of the policy
@@ -69,14 +87,14 @@ public:
      *
      * @return if the new duration of the policy is set
      **/
-    bool setPolicyDuration(const unsigned short days);
+    bool setDuration(const unsigned short days);
 
     /**
      * Check the duration of the policy
      *
      * @return the number of days that the policy last
      **/
-    unsigned short getPolicyDuration() const;
+    unsigned short getDuration() const;
 
     // end time
     /**
