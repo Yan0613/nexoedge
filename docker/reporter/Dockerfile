@@ -1,4 +1,4 @@
-FROM ubuntu:jammy
+FROM ubuntu:jammy@sha256:d80997daaa3811b175119350d84305e1ec9129e1799bba0bd1e3120da3ff52c3
 MAINTAINER Helen Chan <hwchan@cse.cuhk.edu.hk>
 
 RUN apt update \

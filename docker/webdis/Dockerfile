@@ -1,4 +1,4 @@
-FROM alpine:3.11.3 AS stage
+FROM alpine:3.11.3@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d AS stage
 MAINTAINER Helen Chan <hwchan@cse.cuhk.edu.hk>
 
 # adopted from Dockerfile by Nicolas Favre-Felix <n.favrefelix@gmail.com> for webdis
@@ -11,7 +11,7 @@ RUN cd webdis-$(cat latest) && make && make install && cd ..
 RUN sed -i -e 's/"daemonize":.*true,/"daemonize": false,/g' /etc/webdis.prod.json
 
 # main image
-FROM alpine:3.11.3
+FROM alpine:3.11.3@sha256:ab00606a42621fb68f2ed6ad3c88be54397f981a7b70a79db3d1172b11c4367d
 RUN apk update && apk add libevent msgpack-c
 COPY --from=stage /usr/local/bin/webdis /usr/local/bin/
 COPY --from=stage /etc/webdis.prod.json /etc/webdis.prod.json

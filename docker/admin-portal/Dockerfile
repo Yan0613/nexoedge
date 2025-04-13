@@ -1,4 +1,4 @@
-FROM node:16-alpine
+FROM node:16-alpine@sha256:a1f9d027912b58a7c75be7716c97cfbc6d3099f3a97ed84aa490be9dee20e787
 MAINTAINER Helen Chan <hwchan@cse.cuhk.edu.hk>
 
 # adopted from zoidbergwill (https://github.com/zoidbergwill/docker-create-react-app/blob/master/Dockerfile)
@@ -26,7 +26,7 @@ RUN set -ex; \
   yarn cache clean;
 
 
-FROM nginx:alpine
+FROM nginx:alpine@sha256:4ff102c5d78d254a6f0da062b3cf39eaf07f01eec0927fd21e219d0af8bc0591
 WORKDIR /usr/share/nginx/html
 COPY --from=0 /ncloud-admin/build/ /usr/share/nginx/html
 
