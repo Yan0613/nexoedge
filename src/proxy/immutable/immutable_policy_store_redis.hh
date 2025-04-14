@@ -19,22 +19,22 @@ public:
     /**
      * See ImmutablePolicyStore::setPolicyOnFile()
      **/
-    ImmutablePolicyStore::ImmutablePolicyStoreActionResult setPolicyOnFile(const File &f, const ImmutablePolicy &policy);
+    ActionResult setPolicyOnFile(const File &f, const ImmutablePolicy &policy);
 
     /**
      * See ImmutablePolicyStore::extendPolicyOnFile()
      **/
-    ImmutablePolicyStore::ImmutablePolicyStoreActionResult extendPolicyOnFile(const File &f, const ImmutablePolicy &policy);
+    ActionResult extendPolicyOnFile(const File &f, const ImmutablePolicy &policy);
 
     /**
      * See ImmutablePolicyStore::renewPolicyOnFile()
      **/
-    ImmutablePolicyStore::ImmutablePolicyStoreActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable);
+    ActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable);
 
     /**
      * See ImmutablePolicyStore::getPolicyOnFile()
      **/
-    ImmutablePolicyStore::ImmutablePolicyStoreActionResult getPolicyOnFile(const File &f, const ImmutablePolicy::ImmutablePolicyType type, ImmutablePolicy &policy);
+    ActionResult getPolicyOnFile(const File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy);
 
     /**
      * See ImmutablePolicyStore::getAllPoliciesOnFile()
@@ -44,7 +44,7 @@ public:
     /**
      * See ImmutablePolicyStore::deleteAllPolicies()
      **/
-    ImmutablePolicyStore::ImmutablePolicyStoreActionResult deleteAllPolicies(const File &f);
+    ActionResult deleteAllPolicies(const File &f);
 
 private:
 
@@ -57,9 +57,9 @@ private:
      *
      * @return action results with success set to true and the policy set if the policy is successfully attached, false otherwise
      **/
-    ImmutablePolicyStoreActionResult getPolicyOnFile_(const File &f, const ImmutablePolicy::ImmutablePolicyType type, ImmutablePolicy &policy);
+    ActionResult getPolicyOnFile_(const File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy);
 
-    ImmutablePolicyStoreActionResult deletePolicyOnFile_(const File &f, const ImmutablePolicy::ImmutablePolicyType type);
+    ActionResult deletePolicyOnFile_(const File &f, const ImmutablePolicy::Type type);
 
     /**
      * Generate the file and type specific policy key of the policy in the policy store
@@ -70,7 +70,7 @@ private:
      *
      * @return length of the generated policy key successful, 0 otherwise
      **/
-    int genFilePolicyKey(const File &f, const ImmutablePolicy::ImmutablePolicyType type, char *policyKey);
+    int genFilePolicyKey(const File &f, const ImmutablePolicy::Type type, char *policyKey);
 
     const char *policyFieldType = "t";
     const char *policyFieldStartDate = "s";

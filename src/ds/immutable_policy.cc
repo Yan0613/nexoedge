@@ -3,7 +3,13 @@
 #include "../common/define.hh"
 #include "./immutable_policy.hh"
 
-using ImmutablePolicyType = ImmutablePolicy::ImmutablePolicyType;
+const char *ImmutablePolicy::TypeString[] = {
+    "immutable",
+    "modification-hold",
+    "deletion-hold",
+    "access-hold",
+    "unknown"
+};
 
 // convert the time from time_t to struct tm
 bool convertTimet2Tm(const time_t tt, struct tm &tm) {
@@ -18,12 +24,12 @@ ImmutablePolicy::~ImmutablePolicy() {
     reset();
 }
 
-bool ImmutablePolicy::setType(const ImmutablePolicyType type) {
+bool ImmutablePolicy::setType(const ImmutablePolicy::Type type) {
     _type = type;
     return true;
 }
 
-ImmutablePolicyType ImmutablePolicy::getType() const {
+ImmutablePolicy::Type ImmutablePolicy::getType() const {
     return _type;
 }
 

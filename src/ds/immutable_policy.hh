@@ -12,7 +12,7 @@ public:
     ~ImmutablePolicy();
 
     // definitions - policy type
-    enum ImmutablePolicyType {
+    enum Type {
         IMMUTABLE,
         MODIFICATION_HOLD,
         DELETION_HOLD,
@@ -20,6 +20,8 @@ public:
 
         UNKNOWN_IMMUTABLE_POLICY
     };
+
+    static const char *TypeString[UNKNOWN_IMMUTABLE_POLICY + 1];
 
     bool operator== (const ImmutablePolicy &rhs) {
         return 
@@ -47,13 +49,13 @@ public:
      *
      * @return if the new type of the policy is set
      **/
-    bool setType(const ImmutablePolicyType type);
+    bool setType(const Type type);
     /**
      * Obtain the type of the policy
      *
      * @return the type of the policy
      **/
-    ImmutablePolicyType getType() const;
+    Type getType() const;
 
     // start time
     /**
@@ -164,7 +166,7 @@ private:
     std::string convertTimeToRFC7231(const struct tm &t) const;
 
     // internal fields of a policy
-    ImmutablePolicyType _type = UNKNOWN_IMMUTABLE_POLICY;  /**< type of the policy */
+    Type _type = UNKNOWN_IMMUTABLE_POLICY;  /**< type of the policy */
     time_t _start = 0;                                     /**< starting time of the policy */
     short _duration = 0;                                   /**< duration of the policy (in days) */
     bool _autoRenew = false;                               /**< whether the policy auto renews */

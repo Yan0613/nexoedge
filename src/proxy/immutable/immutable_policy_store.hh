@@ -3,12 +3,12 @@
 #ifndef __IMMUTABLE_POLICY_STORE_HH__
 #define __IMMUTABLE_POLICY_STORE_HH__
 
-#include "../../ds/immutable_policy.hh"
 #include "../../ds/file.hh"
+#include "../../ds/immutable_policy.hh"
 
 class ImmutablePolicyStore {
 public:
-    class ImmutablePolicyStoreActionResult {
+    class ActionResult {
     public:
         bool success() const {
             return _success;
@@ -30,7 +30,7 @@ public:
      *
      * @return action results with success set to true if the policy is successfully attached, false otherwise
      **/
-    virtual ImmutablePolicyStoreActionResult setPolicyOnFile(const File &f, const ImmutablePolicy &policy) = 0;
+    virtual ActionResult setPolicyOnFile(const File &f, const ImmutablePolicy &policy) = 0;
 
     /**
      * Extend the valid period of an existing policy on a target file
@@ -40,7 +40,7 @@ public:
      *
      * @return action results with success set to true if the policy is successfully attached, false otherwise
      **/
-    virtual ImmutablePolicyStoreActionResult extendPolicyOnFile(const File &f, const ImmutablePolicy &policy) = 0;
+    virtual ActionResult extendPolicyOnFile(const File &f, const ImmutablePolicy &policy) = 0;
 
     /**
      * Set a new auto-renew status of an existing policy on a target file
@@ -50,7 +50,7 @@ public:
      *
      * @return action results with success set to true if the policy is successfully attached, false otherwise
      **/
-    virtual ImmutablePolicyStoreActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable) = 0;
+    virtual ActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable) = 0;
 
     /**
      * Obtain any existing policy of a target type for a target file
@@ -61,7 +61,7 @@ public:
      *
      * @return action results with success set to true and the policy set if the policy is successfully attached, false otherwise
      **/
-    virtual ImmutablePolicyStoreActionResult getPolicyOnFile(const File &f, const ImmutablePolicy::ImmutablePolicyType type, ImmutablePolicy &policy) = 0;
+    virtual ActionResult getPolicyOnFile(const File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy) = 0;
 
     /**
      * Obtain all existing policy for a target file
@@ -79,7 +79,7 @@ public:
      *
      * @return true if the targrt file has no policies (i.e., all policies removed), false otherwise
      **/
-    virtual ImmutablePolicyStoreActionResult deleteAllPolicies(const File &f) = 0;
+    virtual ActionResult deleteAllPolicies(const File &f) = 0;
 
 private:
 };
