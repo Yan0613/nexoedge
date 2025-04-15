@@ -21,10 +21,30 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
 
     ActionResult result;
 
+    // ensure the policy covers the time now
+    if (!policy.isStarted() || policy.isExpired()) {
+        result._success = false;
+        result._errorMsg
+                .append("Failed to proceed with the ")
+                .append(ImmutablePolicy::TypeString[policyType])
+                .append(" policy of file ")
+                .append(f.name)
+                .append(" due to invalid policy (")
+                .append("started = ")
+                .append(std::to_string(policy.isStarted()))
+                .append("; expired = ")
+                .append(std::to_string(policy.isExpired()))
+                .append(")")
+        ;
+        LOG(ERROR) << result._errorMsg;
+        return result;
+    }
+
     // generate the policy key for the file
     char policyKey[PATH_MAX];
     int keyLength = genFilePolicyKey(f, policy.getType(), policyKey);
     if (keyLength == 0) {
+        result._success = false;
         result._errorMsg
                 .append("Failed to generate the policy key of the ")
                 .append(ImmutablePolicy::TypeString[policyType])
@@ -109,6 +129,7 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
     // get the policy-set transaction results
     for (size_t i = 0; i < numOps; i++) {
         if (redisGetReply(_cxt, (void**) &r) != REDIS_OK || r->type == REDIS_REPLY_ERROR) {
+            // the policy store is not connecting or responding an error
             result._success = false;
             result._errorMsg
                     .append("Failed to get a reply (request ")
@@ -118,8 +139,9 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
                     .append(" policy of file ")
                     .append(f.name);
             LOG(ERROR) << result._errorMsg;
+            if (r == NULL) { reconnect(); }
         } else if (i + 1 == numOps) {
-            // check for the expected requests at the end of the transaction
+            // check for the expected responses at the end of the transaction
             if (r->elements != numOps - 2) {
                 result._success = false;
                 result._errorMsg
@@ -157,6 +179,25 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
     const ImmutablePolicy::Type policyType = policy.getType();
     ActionResult result;
 
+    // ensure the policy covers the time now
+    if (!policy.isStarted() || policy.isExpired()) {
+        result._success = false;
+        result._errorMsg
+                .append("Failed to proceed with the ")
+                .append(ImmutablePolicy::TypeString[policyType])
+                .append(" policy of file ")
+                .append(f.name)
+                .append(" due to invalid policy (")
+                .append("started = ")
+                .append(std::to_string(policy.isStarted()))
+                .append("; expired = ")
+                .append(std::to_string(policy.isExpired()))
+                .append(")")
+        ;
+        LOG(ERROR) << result._errorMsg;
+        return result;
+    }
+
     // generate the policy key for the file
     char policyKey[PATH_MAX];
     int keyLength = genFilePolicyKey(f, policy.getType(), policyKey);
@@ -171,28 +212,50 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
         LOG(ERROR) << result._errorMsg;
     }
 
+    // script inputs
+    // KEYS[1]: policy key
+    // ARGV[1]: field name for valid period
+    // ARGV[2]: new valid period
+    // the script does the following:
+    // 1. Get the current start date and valid period.
+    // 2. If the policy does not exist (d is nil), then do nothing.
+    // 3. If the user-input new end date extends the existing one, update to the new start date and valid period.
+    // 4. Otherwise, do nothing.
+    // the script returns 0 on a successful extension,
+    //                    1 on an unsuccessful extension attempt,
+    //                    2 if the user-provided new end date is not an extension,
+    //                    3 if the policy does not exist
     std::string script = " \
-        local d=redis.call('hget', KEYS[1], KEYS[2]); \
-        if (d and tonumber(ARGV[1]) > tonumber(d)) then \
-            local res=redis.call('hset', KEYS[1], KEYS[2], ARGV[1]); \
-            if (res and tonumber(res) == 0) then \
-                return 1; \
-            else \
-                return 0; \
+        local p = redis.call('hmget', KEYS[1], ARGV[1], ARGV[2]); \
+        if (p[1] and p[2]) then \
+            local newEndTime = tonumber(ARGV[3]) + tonumber(ARGV[4]) * 86400; \
+            local oldEndTime = tonumber(p[1]) + tonumber(p[2]) * 86400; \
+            if (newEndTime > oldEndTime) then \
+                local res=redis.call('hmset', KEYS[1], ARGV[1], ARGV[3], ARGV[2], ARGV[4]); \
+                if (res) then \
+                    return 0; \
+                else \
+                    return 1; \
+                end \
             end \
+            return 2; \
         end \
-        return 0; \
+        return 3; \
     ";
 
     redisReply *r = (redisReply*) redisCommand(
         _cxt
-        , "EVAL %s 2 %b %s %d"
+        , "EVAL %s 1 %b %s %s %i %i"
         , script.c_str()
         , policyKey, keyLength
+        , policyFieldStartDate
         , policyFieldDuration
+        , policy.getStartDate()
         , policy.getDuration()
     );
+
     if (r == NULL) {
+        // the policy store is not responding
         result._success = false;
         result._errorMsg
                 .append("Failed to extend the ")
@@ -200,7 +263,9 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
                 .append(" policy of file ")
                 .append(f.name)
                 .append(" due to policy store connection error.");
-    } else if (r->type != REDIS_REPLY_INTEGER || r->integer != 1) {
+        reconnect();
+    } else if (r->type != REDIS_REPLY_INTEGER || r->integer != 0) {
+        // the policy extension failed
         result._success = false;
         result._errorMsg
                 .append("Failed to extend the ")
@@ -214,6 +279,7 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
                 .append(")");
         LOG(ERROR) << result._errorMsg;
     } else {
+        // the policy extension is successful
         result._success = true;
         LOG(INFO) << "Extended the " << ImmutablePolicy::TypeString[policyType] << " policy of file " << f.name;
     }
@@ -221,27 +287,112 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
     return result;
 }
 
-ActionResult ImmutableRedisPolicyStore::renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable) {
+ActionResult ImmutableRedisPolicyStore::renewPolicyOnFile(const File &f, const ImmutablePolicy::Type type, bool enable) {
     std::lock_guard<std::mutex> lk(_lock);
 
-    const ImmutablePolicy::Type policyType = policy.getType();
     ActionResult result;
 
     // generate the policy key for the file
     char policyKey[PATH_MAX];
-    int keyLength = genFilePolicyKey(f, policy.getType(), policyKey);
+    int keyLength = genFilePolicyKey(f, type, policyKey);
     if (keyLength == 0) {
         result._success = false;
         result._errorMsg
                 .append("Failed to generate the policy key of the ")
-                .append(ImmutablePolicy::TypeString[policyType])
+                .append(ImmutablePolicy::TypeString[type])
                 .append(" policy of file ")
                 .append(f.name)
                 .append(" to auto renew the policy.");
         LOG(ERROR) << result._errorMsg;
     }
+    
+    // script inputs
+    // KEYS[1]: policy key
+    // ARGV[1]: field name for start date
+    // ARGV[2]: field name for valid period
+    // ARGV[3]: field name for auto renew state
+    // ARGV[4]: time now
+    // ARGV[5]: new auto renew state to set
+    // the script does the following:
+    // 1. Get the current start date, valid period, and auto renew state of the target policy.
+    // 2. If the policy does not exist (p[1] or p[2] or p[3] is nil), then do nothing.
+    // 3. If the user-input new renew state is to enable auto renew,
+    //    a. If the policy has not expired, set the auto renew state to enabled for the policy.
+    //    a. Otherwise, do nothing.
+    // 4. If the user-input new renew state is to disable auto renew, update the valid period to the current 'time window' and the new state to the policy.
+    // the script returns 0 on a successful auto renew state update,
+    //                    1 on an unsuccessful update attempt,
+    //                    2 if the policy does not exist
+    std::string script = " \
+        local p = redis.call('hmget', KEYS[1], ARGV[1], ARGV[2], ARGV[3]); \
+        if (p[1] and p[2] and p[3]) then \
+            if (tonumber(ARGV[4]) == 1) then \
+                local res=redis.call('hset', KEYS[1], ARGV[3], ARGV[5]); \
+                if (res and tonumber(res) == 0) then \
+                    return 0; \
+                end \
+                return 1; \
+            end \
+            local st = tonumber(p[1]); \
+            local d = tonumber(p[2]); \
+            local now = tonumber(ARGV[4]); \
+            while (now >= st + d * 86400) do \
+                st = st + d * 86400; \
+            end \
+            local res=redis.call('hmset', KEYS[1], ARGV[1], st, ARGV[2], d, ARGV[3], ARGV[5]); \
+            if (res) then \
+                return 0; \
+            end \
+            return 1; \
+        end \
+        return 2; \
+    ";
 
-    // TODO
+    time_t timeNow;
+    time(&timeNow);
+
+    redisReply *r = (redisReply*) redisCommand(
+        _cxt
+        , "EVAL %s 1 %b %s %s %s %i %i"
+        , script.c_str()
+        , policyKey, keyLength
+        , policyFieldStartDate
+        , policyFieldDuration
+        , policyFieldAutoRenew
+        , timeNow
+        , enable
+    );
+
+    // check the update result
+    if (r == NULL) {
+        // the policy store is not responding
+        result._success = false;
+        result._errorMsg
+                .append("Failed to update the auto renew status of the ")
+                .append(ImmutablePolicy::TypeString[type])
+                .append(" policy of file ")
+                .append(f.name)
+                .append(" due to policy store connection error.");
+        reconnect();
+    } else if (r->type != REDIS_REPLY_INTEGER || r->integer != 0) {
+        // the policy extension failed
+        result._success = false;
+        result._errorMsg
+                .append("Failed to update the auto renew status fo the ")
+                .append(ImmutablePolicy::TypeString[type])
+                .append(" policy of file ")
+                .append(f.name)
+                .append(" (reply type = ")
+                .append(std::to_string(r->type))
+                .append(" integer = ")
+                .append(std::to_string(r->integer))
+                .append(")");
+        LOG(ERROR) << result._errorMsg;
+    } else {
+        // the policy extension is successful
+        result._success = true;
+        LOG(INFO) << "Updated the auto renew state of " << ImmutablePolicy::TypeString[type] << " policy of file " << f.name << " to " << (enable? "enabled" : "disabled");
+    }
 
     return result;
 }
@@ -375,7 +526,7 @@ ActionResult ImmutableRedisPolicyStore::getPolicyOnFile_(const File &f, const Im
         && r->element[1]->type == REDIS_REPLY_NIL
         && r->element[2]->type == REDIS_REPLY_NIL
     ) {
-        result._success = true;
+        result._success = false;
         result._errorMsg = "Policy not exists.";
         LOG(INFO) << "Try obtaining a non-existing " << ImmutablePolicy::TypeString[type] << " policy of file " << f.name << ".";
         return result;

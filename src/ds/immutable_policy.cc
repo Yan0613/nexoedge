@@ -98,7 +98,13 @@ bool ImmutablePolicy::isDefined() const {
 bool ImmutablePolicy::isExpired() const {
     time_t now;
     time(&now);
-    return now > getEndDate();
+    return !isRenewable() && now > getEndDate();
+}
+
+bool ImmutablePolicy::isStarted() const {
+    time_t now;
+    time(&now);
+    return now >= getStartDate();
 }
 
 bool ImmutablePolicy::isExtension(const ImmutablePolicy &target) const {
@@ -106,6 +112,16 @@ bool ImmutablePolicy::isExtension(const ImmutablePolicy &target) const {
         _type == target.getType()
         && getEndDate() > target.getEndDate();
     ;
+}
+
+std::string ImmutablePolicy::to_string() const {
+    std::string rep;
+    rep.append(" type: ").append(TypeString[_type]).append(";");
+    rep.append(" start: ").append(getStartDateString()).append(";");
+    rep.append(" end: ").append(getEndDateString()).append(";");
+    rep.append(" auto-renew: ").append(std::to_string(isRenewable())).append(";");
+
+    return rep;
 }
 
 void ImmutablePolicy::reset() {

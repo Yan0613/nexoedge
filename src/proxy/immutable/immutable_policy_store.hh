@@ -38,7 +38,7 @@ public:
      * @param[in] f  target file with an existing policy to extend
      * @param[in] policy  a policy specifying the type, start date, and new valid period of the existing policy
      *
-     * @return action results with success set to true if the policy is successfully attached, false otherwise
+     * @return action results with success set to true if the policy is successfully extended, false otherwise
      **/
     virtual ActionResult extendPolicyOnFile(const File &f, const ImmutablePolicy &policy) = 0;
 
@@ -46,11 +46,11 @@ public:
      * Set a new auto-renew status of an existing policy on a target file
      *
      * @param[in] f  target file with an existing policy to update the auto-renew status
-     * @param[in] policy  a policy specifying the type of the existing policy to update the auto renew status
+     * @param[in] type  target type of the policy to update
      *
-     * @return action results with success set to true if the policy is successfully attached, false otherwise
+     * @return action results with success set to true if the policy is successfully updated, false otherwise
      **/
-    virtual ActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable) = 0;
+    virtual ActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy::Type type, bool enable) = 0;
 
     /**
      * Obtain any existing policy of a target type for a target file
@@ -59,7 +59,7 @@ public:
      * @param[in] type  target type of the policy to obtain
      * @param[out] policy  policy to obtain
      *
-     * @return action results with success set to true and the policy set if the policy is successfully attached, false otherwise
+     * @return action results with success set to true and the policy set if the policy is obtained, false otherwise
      **/
     virtual ActionResult getPolicyOnFile(const File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy) = 0;
 
@@ -77,7 +77,7 @@ public:
      *
      * @param[in] f  target file to remove all attached policies
      *
-     * @return true if the targrt file has no policies (i.e., all policies removed), false otherwise
+     * @return true if the target file has no policies (i.e., all policies removed), false otherwise
      **/
     virtual ActionResult deleteAllPolicies(const File &f) = 0;
 

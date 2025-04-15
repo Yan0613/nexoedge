@@ -145,6 +145,13 @@ public:
      **/
     bool isExpired() const;
 
+    /**
+     * Check if the policy has started
+     *
+     * @return true if the policy has started
+     **/
+    bool isStarted() const;
+
     // comparison between policies
     /**
      * Check if this policy extends another (i.e., policy of the same time with a later expiration date)
@@ -154,6 +161,11 @@ public:
      * @return true if this policy extend the target policy, false otherwise
      **/
     bool isExtension(const ImmutablePolicy &target) const;
+
+    /**
+     * Convert to a string representation
+     **/
+    std::string to_string() const;
 
 private:
 

@@ -29,7 +29,7 @@ public:
     /**
      * See ImmutablePolicyStore::renewPolicyOnFile()
      **/
-    ActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy &policy, bool enable);
+    ActionResult renewPolicyOnFile(const File &f, const ImmutablePolicy::Type type, bool enable);
 
     /**
      * See ImmutablePolicyStore::getPolicyOnFile()

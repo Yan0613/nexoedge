@@ -45,7 +45,7 @@ void setTestPolicy(
     p.setRenewable(autoRenew);
 }
 
-bool testPolicySet(bool expectToFail = false) {
+bool testPolicySet(time_t startTime = 0, bool expectSetToSucceed = true, bool expectGetToSucceed = true) {
     if (store == nullptr) { return false; }
 
     // increment the number of test cases ran
@@ -55,29 +55,31 @@ bool testPolicySet(bool expectToFail = false) {
     setDefaultTestFile(f);
 
     ImmutablePolicy p, rp;
-    setTestPolicy(p);
+    setTestPolicy(p, startTime);
+
+    //printf("Policy to set: %s\n", p.to_string().c_str());
 
     // set the policy on a file
     ImmutablePolicyStoreActionResult result = store->setPolicyOnFile(f, p);
-    if (result.success() == expectToFail) {
+    if (result.success() != expectSetToSucceed) {
         printf("> Failed to set a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
 
     // get the policy on a file
     result = store->getPolicyOnFile(f, p.getType(), rp);
-    if (!result.success()) {
+    if (result.success() != expectGetToSucceed) {
         printf("> Failed to get a policy on a file after setting! %s\n", result._errorMsg.c_str());
         return false;
     }
 
     // check if the policy is correctly retrieved 
-    if (p != rp && !expectToFail) {
+    if (p != rp && expectSetToSucceed) {
         printf("> Failed to get the policy set!\n");
         return false;
     }
 
-    printf("> Pass the set-policy test (%s as expected).\n", (expectToFail? "failed" : "succeeded"));
+    printf("> Passed the set-policy test (%s as expected).\n", (expectSetToSucceed? "succeeded" : "failed"));
     return true;
 }
 
@@ -92,16 +94,16 @@ bool testNonExistPolicyGet() {
 
     ImmutablePolicy rp;
     ImmutablePolicyStoreActionResult result = store->getPolicyOnFile(f, ImmutablePolicy::Type::IMMUTABLE, rp);
-    if (!result.success()) {
+    if (result.success()) {
         printf("> Get a successful result for an non-existing policy on a file!\n");
         return false;
     }
 
-    printf("> Pass the non-existng policy inquiry test.\n");
+    printf("> Passed the non-existng policy inquiry test.\n");
     return true;
 }
 
-bool testPolicyExtend(int delta = 1, bool expectToFail = false) {
+bool testPolicyExtend(int delta = 1, bool expectToSucceed = true) {
     if (store == nullptr) { return false; }
 
     // increment the number of test cases ran
@@ -117,7 +119,7 @@ bool testPolicyExtend(int delta = 1, bool expectToFail = false) {
     ImmutablePolicyStoreActionResult result = store->extendPolicyOnFile(f, p);
 
     // check if the expected result is there
-    if (result.success() != !expectToFail) {
+    if (result.success() != expectToSucceed) {
         printf("> Failed to extend a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
@@ -125,17 +127,17 @@ bool testPolicyExtend(int delta = 1, bool expectToFail = false) {
     // get the policy on a file
     result = store->getPolicyOnFile(f, p.getType(), rp);
     if (!result.success()) {
-        printf("> Failed to get a policy on a file after setting! %s\n", result._errorMsg.c_str());
+        printf("> Failed to get a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
 
     // check if the policy is correctly retrieved 
-    if (p != rp && !expectToFail) {
-        printf("> Failed to get %s after policy extension %s!\n", (expectToFail? "different policies" : "the same policy"), (expectToFail? "failed" : "succeeded"));
+    if (p != rp && expectToSucceed) {
+        printf("> Failed to get %s after policy extension %s!\n", (expectToSucceed? "the same policy" : "different policies"), (expectToSucceed? "succeeded" : "failed"));
         return false;
     }
 
-    printf("> Pass the extend-policy test (%s as expected).\n", (expectToFail? "failed" : "succeeded"));
+    printf("> Passed the extend-policy test (%s as expected).\n", (expectToSucceed? "succeeded" : "failed"));
     return true;
 }
 
@@ -160,9 +162,52 @@ bool testNonExistPolicyExtend() {
         return false;
     }
 
-    printf("> Pass the non-existing policy extension test.\n");
+    printf("> Passed the non-existing policy extension test.\n");
     return true;
 }
+
+bool testPolicyRenewable(bool enable, time_t startTime = 0, bool expectToSucceed = true) {
+    if (store == nullptr) { return false; }
+
+    // increment the number of test cases ran
+    numRan++;
+
+    File f;
+    setDefaultTestFile(f);
+
+    ImmutablePolicy p, rp;
+    setTestPolicy(p, startTime);
+
+    p.setRenewable(enable);
+
+    ImmutablePolicyStoreActionResult result;
+    time_t timeNow;
+    time(&timeNow);
+    result = store->renewPolicyOnFile(f, p.getType(), enable);
+
+    if (result.success() != expectToSucceed) {
+        printf("> Failed to update a policy on a file! %s\n", result._errorMsg.c_str());
+        return false;
+    }
+
+    result = store->getPolicyOnFile(f, p.getType(), rp);
+
+    if (p.isRenewable() != rp.isRenewable() && expectToSucceed) {
+        printf("> Failed to get the expected auto renew state of the policy!\n");
+        return false;
+    }
+
+    if (expectToSucceed && !enable && timeNow >= rp.getEndDate()) {
+        printf("> Failed to get the expected end date of the policy! (expected beyond %lu but got %lu)\n", timeNow, rp.getEndDate());
+        return false;
+    }
+
+    printf("[Policy in store] %s\n", rp.to_string().c_str());
+
+    printf("> Passed the renew-policy test (%s as expected).\n", (expectToSucceed? "succeeded" : "failed"));
+    return true;
+}
+
 void cleanup() {
     if (store == nullptr) { return; }
     File f;
@@ -200,38 +245,49 @@ int main (int argc, char **argv) {
 
     // TODO policy state
 
-    printf(">> Pass %d of %d tests on policy state. <<\n", numRan - numFailed, numRan);
+    printf(">> Passed %d of %d tests on policy state. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
 
     // policy management
 
-    // test policy set - should success
-    numFailed += !testPolicySet(false);
+    // test policy set in future - should fail
+    time_t futureTime;
+    time(&futureTime);
+    futureTime += 84600;
+    numFailed += !testPolicySet(futureTime, /* expect a SET success */ false, /* expect a GET succes */ false);
+
+    // test policy set - should succeed
+    numFailed += !testPolicySet();
 
     // test retrieval of an non-existing policy - should fail
     numFailed += !testNonExistPolicyGet();
 
     // test duplicate policy set - should fail
-    numFailed += !testPolicySet(true);
+    numFailed += !testPolicySet(0, /* expect a success */ false);
 
-    // test policy extension - should success
+    // test policy extension - should succeed
     numFailed += !testPolicyExtend();
 
     // test policy no change on extension - should fail
-    numFailed += !testPolicyExtend(0, /* expected to fail */ true);
+    numFailed += !testPolicyExtend(0, /* expect a success */ false);
 
     // test policy shorten - should fail
-    numFailed += !testPolicyExtend(-1, /* expected to fail */ true);
+    numFailed += !testPolicyExtend(-1, /* expect a success */ false);
 
-    numFailed += !testPolicyExtend(-1, /* expected to fail */ true);
-    printf(">> Pass %d of %d tests on policy management. <<\n", numRan - numFailed, numRan);
+    // test policy renew - should succeed
+    numFailed += !testPolicyRenewable(/* set to auto renew */ true);
+
+    // test policy renew - should succeed
+    numFailed += !testPolicyRenewable(/* set to auto renew */ false);
+
+    printf(">> Passed %d of %d tests on policy management. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
 
     // TODO policy enforcement
 
-    printf(">> Pass %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
+    printf(">> Passed %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
 
