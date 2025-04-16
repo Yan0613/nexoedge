@@ -8,9 +8,6 @@
 
 class ImmutablePolicy {
 public:
-    ImmutablePolicy();
-    ~ImmutablePolicy();
-
     // definitions - policy type
     enum Type {
         IMMUTABLE,
@@ -22,6 +19,11 @@ public:
     };
 
     static const char *TypeString[UNKNOWN_IMMUTABLE_POLICY + 1];
+
+    ImmutablePolicy();
+    ImmutablePolicy(ImmutablePolicy::Type type, time_t startDate, unsigned short duration) noexcept (false);
+    ImmutablePolicy(ImmutablePolicy::Type type, time_t startDate, unsigned short duration, bool autoRenew) noexcept (false);
+    ~ImmutablePolicy();
 
     bool operator== (const ImmutablePolicy &rhs) {
         return 

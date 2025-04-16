@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #include "../../common/config.hh"
 
 #include "../../proxy/immutable/immutable_policy_store.hh"
@@ -6,13 +8,16 @@
 using ImmutablePolicyStoreActionResult = ImmutablePolicyStore::ActionResult;
 
 
-ImmutableRedisPolicyStore *store = nullptr;
+ImmutablePolicyStore *store = nullptr;
 const char *testFileName = "test_file.txt";
 
 int numFailed = 0;
 int numRan = 0;
 bool failedSome = false;
 
+//=========//
+// Setters //
+//=========//
 
 void setDefaultTestFile(File &f) {
     f.setName(testFileName, strlen(testFileName));
@@ -26,26 +31,36 @@ void setNonExistFile(File &f) {
     f.namespaceId = 3;
 }
 
-void setTestPolicy(
+void setDefaultPolicy(
         ImmutablePolicy &p,
         time_t startTime = 0,
         ImmutablePolicy::Type type = ImmutablePolicy::Type::IMMUTABLE,
         unsigned short duration = 14,
         bool autoRenew = false
 ) {
-    p.setType(type);
-    if (startTime == 0) {
-        time_t timeNow;
-        time(&timeNow);
-        p.setStartDate(timeNow);
-    } else {
-        p.setStartDate(startTime);
+    time_t policyTime = startTime;
+    if (policyTime == 0) {
+        time(&policyTime);
     }
-    p.setDuration(duration);
-    p.setRenewable(autoRenew);
+    p = ImmutablePolicy(type, policyTime, duration, autoRenew);
 }
 
-bool testPolicySet(time_t startTime = 0, bool expectSetToSucceed = true, bool expectGetToSucceed = true) {
+//==========//
+// Clean up //
+//==========//
+
+void cleanup() {
+    if (store == nullptr) { return; }
+    File f;
+    setDefaultTestFile(f);
+    store->deleteAllPolicies(f);
+}
+
+//==============================//
+// Policy Store Test Operations //
+//==============================//
+
+bool testPolicySet(time_t startTime = 0, bool autoRenew = false, bool expectSetToSucceed = true, bool expectGetToSucceed = true) {
     if (store == nullptr) { return false; }
 
     // increment the number of test cases ran
@@ -55,9 +70,11 @@ bool testPolicySet(time_t startTime = 0, bool expectSetToSucceed = true, bool ex
     setDefaultTestFile(f);
 
     ImmutablePolicy p, rp;
-    setTestPolicy(p, startTime);
+    setDefaultPolicy(p);
+    if (startTime > 0) { p.setStartDate(startTime); }
+    p.setRenewable(autoRenew);
 
-    //printf("Policy to set: %s\n", p.to_string().c_str());
+    printf("[Policy to set] %s\n", p.to_string().c_str());
 
     // set the policy on a file
     ImmutablePolicyStoreActionResult result = store->setPolicyOnFile(f, p);
@@ -113,7 +130,7 @@ bool testPolicyExtend(int delta = 1, bool expectToSucceed = true) {
     setDefaultTestFile(f);
 
     ImmutablePolicy p, rp;
-    setTestPolicy(p);
+    setDefaultPolicy(p);
     p.setDuration(p.getDuration() + delta);
 
     ImmutablePolicyStoreActionResult result = store->extendPolicyOnFile(f, p);
@@ -151,8 +168,10 @@ bool testNonExistPolicyExtend() {
     setNonExistFile(f);
 
     ImmutablePolicy p, rp;
-    setTestPolicy(p);
+    setDefaultPolicy(p);
     p.setDuration(p.getDuration() + 1);
+
+    printf("[Policy extension to] %s\n", p.to_string().c_str());
 
     ImmutablePolicyStoreActionResult result = store->extendPolicyOnFile(f, p);
 
@@ -161,6 +180,9 @@ bool testNonExistPolicyExtend() {
         printf("> Got a success for extend a non-existing policy on a file!\n");
         return false;
     }
+
+    result = store->getPolicyOnFile(f, p.getType(), rp);
+    printf("[Policy in store] %s\n", rp.to_string().c_str());
 
     printf("> Passed the non-existing policy extension test.\n");
     return true;
@@ -176,8 +198,8 @@ bool testPolicyRenewable(bool enable, time_t startTime = 0, bool expectToSucceed
     setDefaultTestFile(f);
 
     ImmutablePolicy p, rp;
-    setTestPolicy(p, startTime);
-
+    setDefaultPolicy(p);
+    p.setStartDate(startTime);
     p.setRenewable(enable);
 
     ImmutablePolicyStoreActionResult result;
@@ -208,13 +230,127 @@ bool testPolicyRenewable(bool enable, time_t startTime = 0, bool expectToSucceed
     return true;
 }
 
-void cleanup() {
-    if (store == nullptr) { return; }
-    File f;
-    setDefaultTestFile(f);
-    store->deleteAllPolicies(f);
+//============//
+// Test Cases //
+//============//
+
+void policyStateTests() {
+    ImmutablePolicy p;
+
+    // test policy initial state - should be undefined
+    assert(!p.isDefined() && "Check if a policy is defined.");
+
+    // test the creation of all possible policy types - should succeed
+    for (int policyType = 0; policyType < static_cast<int>(ImmutablePolicy::Type::UNKNOWN_IMMUTABLE_POLICY); policyType++) {
+        assert(p.setType(static_cast<ImmutablePolicy::Type>(policyType)) && "Set a valid policy type.");
+        assert(p.getType() == policyType && "Check policy type set.");
+    }
+
+    // test set start date - should succeed
+    time_t timeNow;
+    time(&timeNow);
+    assert(p.setStartDate(timeNow) && "Set a valid policy start date.");
+    assert(p.getStartDate() == timeNow / 86400 * 86400 && "Check the updated start date after setting a valid policy start date.");
+
+    // test set an invalid start date at the epoch - should fail
+    assert(!p.setStartDate(0) && "Set an invalid policy start date (epoch).");
+
+    // test set a valid period - should succeed
+    unsigned short days = 100;
+    assert(p.setDuration(days) && "Set a valid policy valid period.");
+    assert(p.getDuration() == days && "Check the update valid period after setting a valid policy valid period.");
+
+    // test set an invalid period - should fail
+    assert(!p.setDuration(0) && "Set an invalid policy valid period.");
+
+    // test policy has not expired - should succeed
+    assert(!p.isExpired() && "Check the expiration status of a non-renewable policy with a valid period.");
+
+    // test policy has expired - should succeed
+    assert(p.setStartDate(timeNow - 86400 * 2));
+    assert(p.setDuration(1));
+    assert(p.isExpired() && "Check the expiration status of a non-renewable policy with an 'expired' valid period.");
+    
+    // test policy renewable setting - should succeed
+    assert(p.setRenewable(true));
+    assert(p.isRenewable() && "Check the auto renew status after enabling auto renew");
+    assert(!p.isExpired() && "Check the expiration status of a renewable policy with an 'expired' valid period.");
+    assert(p.setRenewable(false));
+    assert(!p.isRenewable() && "Check the auto renew status after disabling auto renew");
+
+    printf(">> Passed all tests on policy state. <<\n");
 }
 
+void policyStoreTests() {
+    // test policy set in future - should fail
+    time_t futureTime;
+    time(&futureTime);
+    futureTime += 84600;
+    numFailed += !testPolicySet(futureTime, /* auto renew */ false, /* expect a SET success */ false, /* expect a GET succes */ false);
+
+    // test policy set in past - should fail
+    time_t passTime;
+    time(&passTime);
+    passTime -= 84600 * 15;
+    numFailed += !testPolicySet(passTime, /* auto renew */ false, /* expect a SET success */ false, /* expect a GET succes */ false);
+
+    // test policy set - should succeed
+    numFailed += !testPolicySet();
+
+    cleanup();
+
+    // test policy set with renewable - should succeed
+    time(&passTime);
+    passTime -= 84600 * 15;
+    numFailed += !testPolicySet(passTime, /* auto renew */ true);
+
+    // test policy renew disabling - should succeed
+    numFailed += !testPolicyRenewable(/* set to auto renew */ false);
+
+    // test retrieval of an non-existing policy - should fail
+    numFailed += !testNonExistPolicyGet();
+
+    // test duplicate policy set - should fail
+    numFailed += !testPolicySet(0, /* auto renew */ false, /* expect a success */ false);
+
+    // test policy extension - should succeed
+    numFailed += !testPolicyExtend();
+
+    // test policy no change on extension - should fail
+    numFailed += !testPolicyExtend(0, /* expect a success */ false);
+
+    // test policy shorten - should fail
+    numFailed += !testPolicyExtend(-1, /* expect a success */ false);
+
+    // test policy renew eanbling - should succeed
+    numFailed += !testPolicyRenewable(/* set to auto renew */ true);
+
+    // test policy renew disabling - should succeed
+    numFailed += !testPolicyRenewable(/* set to auto renew */ false);
+
+    printf(">> Passed %d of %d tests on policy store. <<\n", numRan - numFailed, numRan);
+    failedSome = failedSome || numFailed > 0;
+    numFailed = 0; numRan = 0;
+}
+
+void policyManagementTests() {
+    // TODO
+    printf(">> Passed %d of %d tests on policy management. <<\n", numRan - numFailed, numRan);
+    failedSome = failedSome || numFailed > 0;
+    numFailed = 0; numRan = 0;
+}
+
+void policyEnforcementTests() {
+    // TODO
+    printf(">> Passed %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
+    failedSome = failedSome || numFailed > 0;
+    numFailed = 0; numRan = 0;
+}
+
+
+//======//
+// Main //
+//======//
 
 int main (int argc, char **argv) {
     // config
@@ -238,58 +374,28 @@ int main (int argc, char **argv) {
     // seed the random number sequence
     //srand(987123);
 
+    // policy state
+    policyStateTests();
+
+    // init the policy store
     store = new ImmutableRedisPolicyStore();
 
     // reset the test state by removing all policies 
     cleanup();
 
-    // TODO policy state
-
-    printf(">> Passed %d of %d tests on policy state. <<\n", numRan - numFailed, numRan);
-    failedSome = failedSome || numFailed > 0;
-    numFailed = 0; numRan = 0;
-
     // policy management
+    policyStoreTests();
+    cleanup();
+    assert(!failedSome);
 
-    // test policy set in future - should fail
-    time_t futureTime;
-    time(&futureTime);
-    futureTime += 84600;
-    numFailed += !testPolicySet(futureTime, /* expect a SET success */ false, /* expect a GET succes */ false);
+    policyManagementTests();
+    cleanup();
+    assert(!failedSome);
 
-    // test policy set - should succeed
-    numFailed += !testPolicySet();
+    // policy enforcement
+    policyEnforcementTests();
+    cleanup();
+    assert(!failedSome);
 
-    // test retrieval of an non-existing policy - should fail
-    numFailed += !testNonExistPolicyGet();
-
-    // test duplicate policy set - should fail
-    numFailed += !testPolicySet(0, /* expect a success */ false);
-
-    // test policy extension - should succeed
-    numFailed += !testPolicyExtend();
-
-    // test policy no change on extension - should fail
-    numFailed += !testPolicyExtend(0, /* expect a success */ false);
-
-    // test policy shorten - should fail
-    numFailed += !testPolicyExtend(-1, /* expect a success */ false);
-
-    // test policy renew - should succeed
-    numFailed += !testPolicyRenewable(/* set to auto renew */ true);
-
-    // test policy renew - should succeed
-    numFailed += !testPolicyRenewable(/* set to auto renew */ false);
-
-    printf(">> Passed %d of %d tests on policy management. <<\n", numRan - numFailed, numRan);
-    failedSome = failedSome || numFailed > 0;
-    numFailed = 0; numRan = 0;
-
-    // TODO policy enforcement
-
-    printf(">> Passed %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
-    failedSome = failedSome || numFailed > 0;
-    numFailed = 0; numRan = 0;
-
-    return failedSome? 1 : 0;
+    return 0;
 }

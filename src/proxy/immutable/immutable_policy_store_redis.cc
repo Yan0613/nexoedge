@@ -30,10 +30,9 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
                 .append(" policy of file ")
                 .append(f.name)
                 .append(" due to invalid policy (")
-                .append("started = ")
-                .append(std::to_string(policy.isStarted()))
-                .append("; expired = ")
-                .append(std::to_string(policy.isExpired()))
+                .append(policy.isStarted()? "started" : "not started")
+                .append(", ")
+                .append(policy.isExpired()? "is expired" : "not expired")
                 .append(")")
         ;
         LOG(ERROR) << result._errorMsg;

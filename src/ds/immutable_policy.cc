@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include <stdexcept>
+
 #include "../common/define.hh"
 #include "./immutable_policy.hh"
 
@@ -18,6 +20,18 @@ bool convertTimet2Tm(const time_t tt, struct tm &tm) {
 
 ImmutablePolicy::ImmutablePolicy() {
     reset();
+}
+
+ImmutablePolicy::ImmutablePolicy(ImmutablePolicy::Type type, time_t startDate, unsigned short duration) noexcept (false) {
+    if (!setType(type) || !setStartDate(startDate) || !setDuration(duration) || !setRenewable(false)) {
+        throw std::invalid_argument("Invalid argument for immutable policy setup.");
+    }
+}
+
+ImmutablePolicy::ImmutablePolicy(ImmutablePolicy::Type type, time_t startDate, unsigned short duration, bool autoRenew) noexcept (false) {
+    if (!setType(type) || !setStartDate(startDate) || !setDuration(duration) || !setRenewable(autoRenew)) {
+        throw std::invalid_argument("Invalid argument for immutable policy setup.");
+    }
 }
 
 ImmutablePolicy::~ImmutablePolicy() {
@@ -45,7 +59,13 @@ bool ImmutablePolicy::setStartDate(const time_t startDate) {
     newStartDate.tm_hour = 0;
 
     // set the new policy start date
-    _start = convertStartDateToUTC(newStartDate);
+    time_t newTime = convertStartDateToUTC(newStartDate);
+
+    // the policy should not start at epoch
+    if (newTime == 0) { return false; }
+
+    _start = newTime;
+
     return true;
 }
 
@@ -60,6 +80,9 @@ std::string ImmutablePolicy::getStartDateString() const {
 }
 
 bool ImmutablePolicy::setDuration(const unsigned short days) {
+    // must be at least one day
+    if (days == 0) { return false; }
+
     _duration = days;
     return true;
 }
