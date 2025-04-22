@@ -97,6 +97,11 @@ Proxy::Proxy(ProxyCoordinator *coordinator, std::map<int, std::string> *map, BgC
         //pthread_create(&_stagingBGCacheReadWorker, 0, stagingBGCacheReads, (void*) this);
         //_stagingPendingReadCache = new RingBuffer<File>(config.getReadCacheBufferSize(), /* block on empty */ true, 1, /* block on full */ false);
     }
+
+    /* immutable storage */
+    _immutableManager = std::make_shared<ImmutableManager>();
+
+    _immutableManagementApis = new ImmutableManagementApis(_immutableManager);
 }
 
 Proxy::~Proxy() {

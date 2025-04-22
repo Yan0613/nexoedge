@@ -121,18 +121,19 @@ bool ImmutablePolicy::isDefined() const {
 bool ImmutablePolicy::isExpired() const {
     time_t now;
     time(&now);
-    return !isRenewable() && now > getEndDate();
+    return isDefined() && !isRenewable() && now > getEndDate();
 }
 
 bool ImmutablePolicy::isStarted() const {
     time_t now;
     time(&now);
-    return now >= getStartDate();
+    return isDefined() && now >= getStartDate();
 }
 
 bool ImmutablePolicy::isExtension(const ImmutablePolicy &target) const {
     return
-        _type == target.getType()
+        isDefined()
+        && _type == target.getType()
         && getEndDate() > target.getEndDate();
     ;
 }

@@ -170,12 +170,6 @@ enum MetaStoreType {
     UNKNOWN_METASTORE
 };
 
-enum ImmutablePolicyStoreType {
-    REDIS_IMMUTABLE_POLICY_STORE,
-
-    UNKNOWN_IMMUTABLE_POLICY_STORE
-};
-
 enum MessageDirection {
     PROXY_TO_AGENT,
     AGENT_TO_PROXY,

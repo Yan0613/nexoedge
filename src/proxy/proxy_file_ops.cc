@@ -23,6 +23,13 @@ bool Proxy::writeFile(File &f) {
     if (f.storageClass.empty())
         f.storageClass = Config::getInstance().getDefaultStorageClass();
 
+    LOG(INFO) << "Checking for immutability";
+    // check for immutability
+    if (_immutableManager->isImmutable(f) || _immutableManager->isOnModificationHold(f) || _immutableManager->isOnAccessHold(f)) {
+        LOG(ERROR) << "Failed to proceed with a write operations on file " << wf.name << " due to immutable policies";
+        return false;
+    }
+
     int *spareContainers = 0;
     int numSelected = 0; // no need to find selected containers
     if (prepareWrite(f, wf, spareContainers, numSelected, /* needsFindSpareContainers */ false) == false) {
@@ -221,6 +228,12 @@ bool Proxy::modifyFile(File &f, bool isAppend) {
         f.namespaceId = DEFAULT_NAMESPACE_ID;
     of.copyName(f, /* shadow */ true);
     boost::uuids::uuid expectedUUID = of.uuid;
+
+    // check for immutability
+    if (_immutableManager->isImmutable(f) || _immutableManager->isOnModificationHold(f) || _immutableManager->isOnAccessHold(f)) {
+        LOG(ERROR) << "Failed to proceed with a write operations on file " << wf.name << " due to immutable policies";
+        return false;
+    }
 
     unsigned long int ooffset = f.offset, olength = f.length;
 
@@ -889,6 +902,12 @@ bool Proxy::readFile(File &f, bool isPartial) {
     }
     rf.copyVersionControlInfo(f);
 
+    // check for immutability
+    if (_immutableManager->isOnAccessHold(f)) {
+        LOG(ERROR) << "Failed to proceed with a read operations on file " << f.name << " due to immutable policies";
+        return false;
+    }
+
     getMeta.start();
     // get file metadata
     if (_metastore->getMeta(rf) == false) {
@@ -1424,6 +1443,12 @@ bool Proxy::deleteFile(const File &f) {
     if (df.namespaceId == INVALID_NAMESPACE_ID)
         df.namespaceId = DEFAULT_NAMESPACE_ID;
 
+    // check for immutability
+    if (_immutableManager->isImmutable(df) || _immutableManager->isOnDeleteHold(df) || _immutableManager->isOnAccessHold(df)) {
+        LOG(ERROR) << "Failed to proceed with a delete operations on file " << df.name << " due to immutable policies";
+        return false;
+    }
+
     // lock file and get metadata for delete
     if (lockFileAndGetMeta(df, "delete file") == false) {
         LOG(ERROR) << "Failed to lock file " << df.name << " for delete";
@@ -1513,6 +1538,12 @@ bool Proxy::renameFile(File &sf, File &df) {
     // use the source namespace id if not specified
     if (df.namespaceId == INVALID_NAMESPACE_ID)
         df.namespaceId = sf.namespaceId;
+
+    // check for immutability
+    if (_immutableManager->isImmutable(sf) || _immutableManager->isOnModificationHold(sf) || _immutableManager->isOnAccessHold(sf)) {
+        LOG(ERROR) << "Failed to proceed with a write operations on file " << sf.name << " due to immutable policies";
+        return false;
+    }
 
     if (srf.copyNameAndSize(sf) == false) {
         LOG(ERROR) << "Failed to copy file metadata for copy operaiton";
@@ -1638,6 +1669,12 @@ bool Proxy::copyFile(File &sf, File &df) {
 
     if (drf.copyNameAndSize(df) == false) {
         LOG(ERROR) << "Failed to copy file metadata for copy operaiton";
+        return false;
+    }
+
+    // check for immutability
+    if (_immutableManager->isOnAccessHold(sf)) {
+        LOG(ERROR) << "Failed to proceed with a write operations on file " << sf.name << " due to immutable policies";
         return false;
     }
 

@@ -81,6 +81,8 @@ public:
      **/
     virtual ActionResult deleteAllPolicies(const File &f) = 0;
 
+    // TODO cater move (file rename) and copy (file copy)
+
 private:
 };
 

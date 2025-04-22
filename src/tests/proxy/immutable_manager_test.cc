@@ -1,19 +1,43 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include <vector>
+#include <map>
+
 #include "../../common/config.hh"
+
+#include "../../proxy/proxy.hh"
+#include "../../proxy/coordinator.hh"
+#include "../../proxy/dedup/dedup.hh"
+#include "../../proxy/dedup/impl/dedup_none.hh"
 
 #include "../../proxy/immutable/immutable_policy_store.hh"
 #include "../../proxy/immutable/immutable_policy_store_redis.hh"
 
 using ImmutablePolicyStoreActionResult = ImmutablePolicyStore::ActionResult;
 
+Proxy *proxy = nullptr;
+DeduplicationModule *dedup = nullptr;
+ProxyCoordinator *coordinator = nullptr;
+pthread_t ct;
+std::map<int, std::string> agentMap; // container to agent map
+BgChunkHandler::TaskQueue taskQueue; // background chunk task queue
 
 ImmutablePolicyStore *store = nullptr;
 const char *testFileName = "test_file.txt";
+const char *testDstFileName = "test_file_dst.txt";
 
 int numFailed = 0;
 int numRan = 0;
 bool failedSome = false;
+
+enum {
+    OVERWRITE,
+    APPEND,
+    READ,
+    RENAME,
+    COPY,
+    DELETE
+};
 
 //=========//
 // Setters //
@@ -21,8 +45,20 @@ bool failedSome = false;
 
 void setDefaultTestFile(File &f) {
     f.setName(testFileName, strlen(testFileName));
-    f.setVersion(0);
+    //f.setVersion(0);
     f.namespaceId = 123;
+    f.offset = 0;
+    f.size = 0;
+    f.length = 0;
+}
+
+void setNewDstDefaultTestFile(File &f) {
+    f.setName(testDstFileName, strlen(testDstFileName));
+    //f.setVersion(0);
+    f.namespaceId = 123;
+    f.offset = 0;
+    f.size = 0;
+    f.length = 0;
 }
 
 void setNonExistFile(File &f) {
@@ -43,6 +79,43 @@ void setDefaultPolicy(
         time(&policyTime);
     }
     p = ImmutablePolicy(type, policyTime, duration, autoRenew);
+}
+
+//=============//
+// Proxy Setup //
+//=============//
+
+void initProxy() {
+    // create proxy and interface
+    coordinator = new ProxyCoordinator(&agentMap); // proxy coordinator
+    pthread_create(&ct, NULL, ProxyCoordinator::run, coordinator); // proxy coordinator thread
+
+    dedup = new DedupNone();
+    proxy = new Proxy(coordinator, &agentMap, &taskQueue, dedup);
+    printf("Started the proxy. %p\n", proxy);
+}
+
+bool uploadAnEmptyFile() {
+    printf("Start writing an empty file.\n");
+    File f;
+    setDefaultTestFile(f);
+    if (!proxy->writeFile(f)) {
+        printf(">> Failed to write an empty file to check policy enforcement!\n");
+        return false;
+    }
+    return true;
+}
+
+void shutdownProxy() {
+    printf("Shutting down the proxy.\n");
+    delete proxy;
+    delete dedup;
+    delete coordinator;
+
+    printf("Shutted down the proxy.\n");
+    proxy = nullptr;
+    coordinator = nullptr;
+    dedup = nullptr;
 }
 
 //==========//
@@ -230,6 +303,80 @@ bool testPolicyRenewable(bool enable, time_t startTime = 0, bool expectToSucceed
     return true;
 }
 
+bool testEnforcementFile(std::vector<ImmutablePolicy> policies, std::map<int, bool> expectedResults, std::string testType) {
+    File f, df;
+    setDefaultTestFile(f);
+    setNewDstDefaultTestFile(df);
+
+    // remove all policies on the file
+    store->deleteAllPolicies(f);
+
+    // set all policies to test
+    for (auto p : policies) {
+        store->setPolicyOnFile(f, p);
+    }
+
+    numRan++;
+
+    // upload the file
+    if (uploadAnEmptyFile() == false) {
+        printf("Failed to upload an empty file under %s.", testType.c_str());
+        return false;
+    }
+
+    // test all file operations - expect all to run successfully
+    if (proxy->overwriteFile(f) != expectedResults[OVERWRITE]) {
+        printf("Failed to overwrite under %s.", testType.c_str());
+        return false;
+    }
+    if (proxy->appendFile(f) != expectedResults[APPEND]) {
+        printf("Failed to append under %s.", testType.c_str());
+        return false;
+    }
+    if (proxy->readFile(f) != expectedResults[READ]) {
+        printf("Failed to read under %s.", testType.c_str());
+        return false;
+    }
+    if (proxy->renameFile(f, df) != expectedResults[RENAME]) {
+        printf("Failed to rename under %s.", testType.c_str());
+        return false;
+    }
+    if (proxy->copyFile(df, f) != expectedResults[COPY]) {
+        printf("Failed to copy under %s.", testType.c_str());
+        return false;
+    }
+    if (proxy->deleteFile(df) != expectedResults[DELETE]) {
+        printf("Failed to delete the renamed file under %s.", testType.c_str());
+        return false;
+    }
+    if (proxy->deleteFile(f) != expectedResults[DELETE]) {
+        printf("Failed to delete the copied file under %s.", testType.c_str());
+        return false;
+    }
+
+    // remove all policies on the file
+    store->deleteAllPolicies(f);
+
+    // clean up
+    proxy->deleteFile(df);
+    proxy->deleteFile(f);
+
+    printf("> Passed the operation test under %s.", testType.c_str());
+    return true;
+}
+
+bool testEnforcementFileNoPolicy() {
+    std::map<int, bool> expectedResults;
+    expectedResults[OVERWRITE] = true;
+    expectedResults[APPEND] = true;
+    expectedResults[READ] = true;
+    expectedResults[RENAME] = true;
+    expectedResults[COPY] = true;
+    expectedResults[DELETE] = true;
+    std::vector<ImmutablePolicy> policies;
+    return testEnforcementFile(policies, expectedResults, "no policies");
+}
+
 //============//
 // Test Cases //
 //============//
@@ -333,18 +480,38 @@ void policyStoreTests() {
     numFailed = 0; numRan = 0;
 }
 
-void policyManagementTests() {
-    // TODO
-    printf(">> Passed %d of %d tests on policy management. <<\n", numRan - numFailed, numRan);
-    failedSome = failedSome || numFailed > 0;
-    numFailed = 0; numRan = 0;
-}
-
 void policyEnforcementTests() {
-    // TODO
+
+    // init a proxy
+    initProxy();
+
+    // no policy
+    numFailed += !testEnforcementFileNoPolicy();
+
+    /*
+    // immutable data
+    numFailed += !testEnforcementFileImmutablePolicyValid();
+    numFailed += !testEnforcementFileImmutablePolicyExpired();
+
+    // modification hold
+    numFailed += !testEnforcementFileModificationHoldPolicyValid();
+    numFailed += !testEnforcementFileModificationHoldPolicyExpired();
+    
+    // deletion hold
+    numFailed += !testEnforcementFileDeletionHoldPolicyValid();
+    numFailed += !testEnforcementFileDeletionHoldPolicyExpired();
+
+    // access hold
+    numFailed += !testEnforcementFileAccessHoldPolicyValid();
+    numFailed += !testEnforcementFileAccessHoldPolicyExpired();
+
+
     printf(">> Passed %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
+    */
+
+    shutdownProxy();
 }
 
 
@@ -388,14 +555,13 @@ int main (int argc, char **argv) {
     cleanup();
     assert(!failedSome);
 
-    policyManagementTests();
-    cleanup();
-    assert(!failedSome);
-
     // policy enforcement
     policyEnforcementTests();
     cleanup();
     assert(!failedSome);
+
+    delete store;
+    store = nullptr;
 
     return 0;
 }
