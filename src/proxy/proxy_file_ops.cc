@@ -23,7 +23,6 @@ bool Proxy::writeFile(File &f) {
     if (f.storageClass.empty())
         f.storageClass = Config::getInstance().getDefaultStorageClass();
 
-    LOG(INFO) << "Checking for immutability";
     // check for immutability
     if (_immutableManager->isImmutable(f) || _immutableManager->isOnModificationHold(f) || _immutableManager->isOnAccessHold(f)) {
         LOG(ERROR) << "Failed to proceed with a write operations on file " << wf.name << " due to immutable policies";
@@ -226,14 +225,15 @@ bool Proxy::modifyFile(File &f, bool isAppend) {
 
     if (f.namespaceId == INVALID_NAMESPACE_ID)
         f.namespaceId = DEFAULT_NAMESPACE_ID;
-    of.copyName(f, /* shadow */ true);
-    boost::uuids::uuid expectedUUID = of.uuid;
 
     // check for immutability
     if (_immutableManager->isImmutable(f) || _immutableManager->isOnModificationHold(f) || _immutableManager->isOnAccessHold(f)) {
-        LOG(ERROR) << "Failed to proceed with a write operations on file " << wf.name << " due to immutable policies";
+        LOG(ERROR) << "Failed to proceed with a write operations on file " << f.name << " due to immutable policies";
         return false;
     }
+
+    of.copyName(f, /* shadow */ true);
+    boost::uuids::uuid expectedUUID = of.uuid;
 
     unsigned long int ooffset = f.offset, olength = f.length;
 
@@ -1523,6 +1523,9 @@ bool Proxy::deleteFile(const File &f) {
             << ", (delete-data)" << duration.wall * 1.0 / 1e6 << " ms";
     LOG(INFO) << "Delete file " << f.name << ", completes in " << all.elapsed().wall * 1.0 / 1e9 << " s";
     
+    // remove the immutable policy of the file
+    _immutableManager->deleteAllPolicy(f);
+
     return true;
 }
 
@@ -1541,7 +1544,7 @@ bool Proxy::renameFile(File &sf, File &df) {
 
     // check for immutability
     if (_immutableManager->isImmutable(sf) || _immutableManager->isOnModificationHold(sf) || _immutableManager->isOnAccessHold(sf)) {
-        LOG(ERROR) << "Failed to proceed with a write operations on file " << sf.name << " due to immutable policies";
+        LOG(ERROR) << "Failed to proceed with a rename operations on file " << sf.name << " due to immutable policies";
         return false;
     }
 
@@ -1636,6 +1639,10 @@ bool Proxy::renameFile(File &sf, File &df) {
 
     unlockFile(srf);
     unlockFile(drf);
+
+    // move the policies from the source to the destination
+    _immutableManager->moveAllPolicy(srf, drf);
+
     return true;
 }
 
@@ -1674,7 +1681,7 @@ bool Proxy::copyFile(File &sf, File &df) {
 
     // check for immutability
     if (_immutableManager->isOnAccessHold(sf)) {
-        LOG(ERROR) << "Failed to proceed with a write operations on file " << sf.name << " due to immutable policies";
+        LOG(ERROR) << "Failed to proceed with a copy operations on file " << sf.name << " due to immutable policies";
         return false;
     }
 

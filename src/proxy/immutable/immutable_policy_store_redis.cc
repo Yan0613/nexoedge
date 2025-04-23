@@ -432,6 +432,96 @@ ActionResult ImmutableRedisPolicyStore::deleteAllPolicies(const File &f) {
 
 }
 
+ActionResult ImmutableRedisPolicyStore::moveAllPolicies(const File &sf, const File &df) {
+    std::lock_guard<std::mutex> lk(_lock);
+
+    size_t numOps = 0;
+
+    // start a transaction
+    redisAppendCommand(
+        _cxt
+        , "MULTI"
+    );
+    numOps++;
+
+    // go through all possible types of policy; append the migration instruction
+    ActionResult finalResult;
+    finalResult._success = true;
+    for (int policyType = 0; policyType < static_cast<int>(ImmutablePolicy::Type::UNKNOWN_IMMUTABLE_POLICY); policyType++) {
+        ImmutablePolicy::Type type = static_cast<ImmutablePolicy::Type>(policyType);
+        char oldPolicyKey[PATH_MAX], newPolicyKey[PATH_MAX];
+        int oldKeyLength = genFilePolicyKey(sf, type, oldPolicyKey);
+        int newKeyLength = genFilePolicyKey(df, type, newPolicyKey);
+        redisAppendCommand(
+            _cxt
+            , "RENAME %b %b"
+            , oldPolicyKey, oldKeyLength
+            , newPolicyKey, newKeyLength
+        );
+        numOps++;
+    }
+
+    // end of the transaction
+    redisAppendCommand(
+        _cxt
+        , "EXEC"
+    );
+    numOps++;
+
+
+    // assume the transaction is successful first and check for any error
+    ImmutablePolicyStore::ActionResult result;
+    result._success = true;
+    redisReply *r = nullptr;
+
+    // get the policy-set transaction results
+    for (size_t i = 0; i < numOps; i++) {
+        if (redisGetReply(_cxt, (void**) &r) != REDIS_OK || r->type == REDIS_REPLY_ERROR) {
+            // the policy store is not connecting or responding an error
+            result._success = false;
+            result._errorMsg
+                    .append("Failed to get a reply (request ")
+                    .append(std::to_string(i+1))
+                    .append(") on moving the policies of file ")
+                    .append(sf.name);
+            LOG(ERROR) << result._errorMsg;
+            if (r == NULL) { reconnect(); }
+        } else if (i + 1 == numOps) {
+            // check for the expected responses at the end of the transaction
+            if (r->elements != numOps - 2) {
+                result._success = false;
+                result._errorMsg
+                        .append("Failed to get all replies on moving the policies of file")
+                        .append(sf.name);
+                LOG(ERROR) << result._errorMsg;
+            }
+            // check for any request failure
+            for (size_t j = 0; j < r->elements; j++) {
+                const int type = r->element[j]->type;
+                const char *msg = r->element[j]->str;
+                const int msgLength = r->element[j]->len;
+                if (type != REDIS_REPLY_STRING
+                        && type != REDIS_REPLY_ERROR
+                        && type != REDIS_REPLY_STATUS
+                        && strncmp(msg, "OK", msgLength) != 0
+                ) {
+                    result._success = false;
+                    result._errorMsg
+                            .append("Failed to move the ")
+                            .append(ImmutablePolicy::TypeString[j])
+                            .append(" policy of file ")
+                            .append(sf.name);
+                    LOG(ERROR) << result._errorMsg << " (reply type = " << type << ", msg = " << msg << ")";
+                    break;
+                }
+            }
+        }
+        freeReplyObject(r);
+    }
+
+    return result;
+}
+
 int ImmutableRedisPolicyStore::genFilePolicyKey(const File &f, const ImmutablePolicy::Type type, char *policyKey) {
     if (policyKey == NULL) { return 0; }
 

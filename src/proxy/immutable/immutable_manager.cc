@@ -41,6 +41,10 @@ bool ImmutableManager::deleteAllPolicy(const File &f) const {
     return _policyStore->deleteAllPolicies(f).success();
 }
 
+bool ImmutableManager::moveAllPolicy(const File &sf, const File &df) const {
+    return _policyStore->moveAllPolicies(sf, df).success();
+}
+
 bool ImmutableManager::isImmutable(const File &f) const {
     return isPolicyValid(f, ImmutablePolicy::Type::IMMUTABLE);
 }

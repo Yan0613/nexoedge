@@ -46,6 +46,11 @@ public:
      **/
     ActionResult deleteAllPolicies(const File &f);
 
+    /**
+     * See ImmutablePolicyStore::moveAllPolicies()
+     **/
+    ActionResult moveAllPolicies(const File &sf, const File &df);
+
 private:
 
     /**

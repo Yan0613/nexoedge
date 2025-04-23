@@ -31,6 +31,7 @@ int numRan = 0;
 bool failedSome = false;
 
 enum {
+    WRITE,
     OVERWRITE,
     APPEND,
     READ,
@@ -95,12 +96,11 @@ void initProxy() {
     printf("Started the proxy. %p\n", proxy);
 }
 
-bool uploadAnEmptyFile() {
-    printf("Start writing an empty file.\n");
+bool uploadAnEmptyFile(bool expectedResult = true) {
     File f;
     setDefaultTestFile(f);
     if (!proxy->writeFile(f)) {
-        printf(">> Failed to write an empty file to check policy enforcement!\n");
+        if (expectedResult) { printf(">> Failed to write an empty file to check policy enforcement!\n"); }
         return false;
     }
     return true;
@@ -112,7 +112,6 @@ void shutdownProxy() {
     delete dedup;
     delete coordinator;
 
-    printf("Shutted down the proxy.\n");
     proxy = nullptr;
     coordinator = nullptr;
     dedup = nullptr;
@@ -303,70 +302,175 @@ bool testPolicyRenewable(bool enable, time_t startTime = 0, bool expectToSucceed
     return true;
 }
 
-bool testEnforcementFile(std::vector<ImmutablePolicy> policies, std::map<int, bool> expectedResults, std::string testType) {
-    File f, df;
-    setDefaultTestFile(f);
-    setNewDstDefaultTestFile(df);
+bool testPolicyMove() {
+    if (store == nullptr) { return false; }
 
-    // remove all policies on the file
-    store->deleteAllPolicies(f);
+    // increment the number of test cases ran
+    numRan++;
 
-    // set all policies to test
-    for (auto p : policies) {
-        store->setPolicyOnFile(f, p);
+    File f1, f2;
+    setDefaultTestFile(f1);
+    setNewDstDefaultTestFile(f2);
+
+    // remove all policies on both files (for a fresh start)
+    store->deleteAllPolicies(f1);
+    store->deleteAllPolicies(f2);
+
+    // set the policies to the source file
+    ImmutablePolicy p;
+    ImmutablePolicyStoreActionResult result;
+    for (int policyType = 0; policyType < static_cast<int>(ImmutablePolicy::Type::UNKNOWN_IMMUTABLE_POLICY); policyType++) {
+        setDefaultPolicy(p);
+        p.setType(static_cast<ImmutablePolicy::Type>(policyType));
+        result = store->setPolicyOnFile(f1, p);
+        if (result.success() == false) {
+            printf("> Failed to set the policies for policy move.\n");
+            store->deleteAllPolicies(f1);
+            return false;
+        }
+        printf("[Policy in store before move] %s\n", p.to_string().c_str());
     }
 
-    numRan++;
+    // execute the policy migration from the source file to the destination file
+    result = store->moveAllPolicies(f1, f2);
+    if (result.success() == false) {
+        printf("> Failed to move the policies.\n");
+        store->deleteAllPolicies(f1);
+        return false;
+    }
+  
+    // check the result - no policies remains with the source files, all policies are now with the destination file
+    for (int policyType = 0; policyType < static_cast<int>(ImmutablePolicy::Type::UNKNOWN_IMMUTABLE_POLICY); policyType++) {
+        ImmutablePolicy rp1, rp2;
+        ImmutablePolicy::Type type = static_cast<ImmutablePolicy::Type>(policyType);
+        result = store->getPolicyOnFile(f1, type, rp1);
+        if (result.success() != false) {
+            printf("> Failed to move the %s policies in the policy move (still with the source).\n", ImmutablePolicy::TypeString[type]);
+            store->deleteAllPolicies(f1);
+            store->deleteAllPolicies(f2);
+            return false;
+        }
+        result = store->getPolicyOnFile(f2, type, rp2);
+        if (result.success() == false) {
+            printf("> Failed to move the %s policies in the policy move (missing from the destination).\n", ImmutablePolicy::TypeString[type]);
+            store->deleteAllPolicies(f1);
+            store->deleteAllPolicies(f2);
+            return false;
+        }
+        printf("[Policy in store after move] %s\n", rp2.to_string().c_str());
+    }
+    
+    printf("> Passed the move-policy test.\n");
+    return true;
+}
+
+bool testEnforcementFile(std::vector<ImmutablePolicy> policies, std::map<int, bool> expectedResults, std::string testType) {
+    if (store == nullptr) { return false; }
+
+    File f1, f2;
+    setDefaultTestFile(f1);
+    setNewDstDefaultTestFile(f2);
+
+    // remove all policies on the file
+    store->deleteAllPolicies(f1);
+    store->deleteAllPolicies(f2);
 
     // upload the file
     if (uploadAnEmptyFile() == false) {
         printf("Failed to upload an empty file under %s.", testType.c_str());
+        store->deleteAllPolicies(f1);
+        store->deleteAllPolicies(f2);
         return false;
     }
 
+    // set all policies to test
+    for (auto p : policies) {
+        if (store->setPolicyOnFile(f1, p).success() == false) {
+            store->deleteAllPolicies(f1);
+            store->deleteAllPolicies(f2);
+            printf("Failed to set policies on the file for tests under %s.", testType.c_str());
+            return false;
+        }
+    }
+
+    numRan++;
+
     // test all file operations - expect all to run successfully
-    if (proxy->overwriteFile(f) != expectedResults[OVERWRITE]) {
+    // write
+    if (uploadAnEmptyFile(expectedResults[WRITE]) != expectedResults[WRITE]) {
+        printf("Failed to write under %s.", testType.c_str());
+        return false;
+    }
+    // overwrite
+    if (proxy->overwriteFile(f1) != expectedResults[OVERWRITE]) {
         printf("Failed to overwrite under %s.", testType.c_str());
         return false;
     }
-    if (proxy->appendFile(f) != expectedResults[APPEND]) {
+    // append
+    if (proxy->appendFile(f1) != expectedResults[APPEND]) {
         printf("Failed to append under %s.", testType.c_str());
         return false;
     }
-    if (proxy->readFile(f) != expectedResults[READ]) {
+    // read
+    if (proxy->readFile(f1) != expectedResults[READ]) {
         printf("Failed to read under %s.", testType.c_str());
         return false;
     }
-    if (proxy->renameFile(f, df) != expectedResults[RENAME]) {
+    // rename
+    if (proxy->renameFile(f1, f2) != expectedResults[RENAME]) {
         printf("Failed to rename under %s.", testType.c_str());
         return false;
     }
-    if (proxy->copyFile(df, f) != expectedResults[COPY]) {
+    // check the policies goes to the renamed file
+    if (expectedResults[RENAME]) {
+        for (ImmutablePolicy p : policies) {
+            ImmutablePolicy rp1, rp2;
+            ImmutablePolicy::Type type = p.getType();
+            ImmutablePolicyStore::ActionResult result = store->getPolicyOnFile(f1, type, rp1);
+            if (result.success() != false) {
+                printf("Failed to update the %s policies after rename (still with the source).\n", ImmutablePolicy::TypeString[type]);
+                store->deleteAllPolicies(f1);
+                store->deleteAllPolicies(f2);
+                return false;
+            }
+            result = store->getPolicyOnFile(f2, type, rp2);
+            if (result.success() == false) {
+                printf("Failed to update the %s policies after rename (missing from the destination).\n", ImmutablePolicy::TypeString[type]);
+                store->deleteAllPolicies(f1);
+                store->deleteAllPolicies(f2);
+                return false;
+            }
+        }
+    }
+    // copy
+    File &sf = expectedResults[RENAME]? f2 : f1;
+    File &df = expectedResults[RENAME]? f1 : f2;
+    if (proxy->copyFile(sf, df) != expectedResults[COPY]) {
         printf("Failed to copy under %s.", testType.c_str());
         return false;
     }
-    if (proxy->deleteFile(df) != expectedResults[DELETE]) {
+    // delete
+    File &tf = expectedResults[RENAME]? f2 : f1;
+    if (proxy->deleteFile(tf) != expectedResults[DELETE]) {
         printf("Failed to delete the renamed file under %s.", testType.c_str());
-        return false;
-    }
-    if (proxy->deleteFile(f) != expectedResults[DELETE]) {
-        printf("Failed to delete the copied file under %s.", testType.c_str());
         return false;
     }
 
     // remove all policies on the file
-    store->deleteAllPolicies(f);
+    store->deleteAllPolicies(f1);
+    store->deleteAllPolicies(f2);
 
     // clean up
-    proxy->deleteFile(df);
-    proxy->deleteFile(f);
+    proxy->deleteFile(f1);
+    proxy->deleteFile(f2);
 
-    printf("> Passed the operation test under %s.", testType.c_str());
+    printf("> Passed the operation test under %s.\n", testType.c_str());
     return true;
 }
 
 bool testEnforcementFileNoPolicy() {
     std::map<int, bool> expectedResults;
+    expectedResults[WRITE] = true;
     expectedResults[OVERWRITE] = true;
     expectedResults[APPEND] = true;
     expectedResults[READ] = true;
@@ -377,6 +481,68 @@ bool testEnforcementFileNoPolicy() {
     return testEnforcementFile(policies, expectedResults, "no policies");
 }
 
+bool testEnforcementFileImmutablePolicyValid() {
+    std::map<int, bool> expectedResults;
+    expectedResults[WRITE] = false;
+    expectedResults[OVERWRITE] = false;
+    expectedResults[APPEND] = false;
+    expectedResults[READ] = true;
+    expectedResults[RENAME] = false;
+    expectedResults[COPY] = true;
+    expectedResults[DELETE] = false;
+    std::vector<ImmutablePolicy> policies;
+    policies.resize(1); 
+    setDefaultPolicy(policies.at(0));
+    return testEnforcementFile(policies, expectedResults, "a valid immutable policy");
+}
+
+bool testEnforcementFileModificationHoldPolicyValid() {
+    std::map<int, bool> expectedResults;
+    expectedResults[WRITE] = false;
+    expectedResults[OVERWRITE] = false;
+    expectedResults[APPEND] = false;
+    expectedResults[READ] = true;
+    expectedResults[RENAME] = false;
+    expectedResults[COPY] = true;
+    expectedResults[DELETE] = true;
+    std::vector<ImmutablePolicy> policies;
+    policies.resize(1); 
+    setDefaultPolicy(policies.at(0));
+    policies.at(0).setType(ImmutablePolicy::Type::MODIFICATION_HOLD);
+    return testEnforcementFile(policies, expectedResults, "a valid modification-hold policy");
+}
+
+bool testEnforcementFileDeletionHoldPolicyValid() {
+    std::map<int, bool> expectedResults;
+    expectedResults[WRITE] = false;
+    expectedResults[OVERWRITE] = false;
+    expectedResults[APPEND] = false;
+    expectedResults[READ] = true;
+    expectedResults[RENAME] = true;
+    expectedResults[COPY] = true;
+    expectedResults[DELETE] = true;
+    std::vector<ImmutablePolicy> policies;
+    policies.resize(1); 
+    setDefaultPolicy(policies.at(0));
+    policies.at(0).setType(ImmutablePolicy::Type::DELETION_HOLD);
+    return testEnforcementFile(policies, expectedResults, "a valid deletion-hold policy");
+}
+
+bool testEnforcementFileAccessHoldPolicyValid() {
+    std::map<int, bool> expectedResults;
+    expectedResults[WRITE] = false;
+    expectedResults[OVERWRITE] = false;
+    expectedResults[APPEND] = false;
+    expectedResults[READ] = false;
+    expectedResults[RENAME] = false;
+    expectedResults[COPY] = false;
+    expectedResults[DELETE] = false;
+    std::vector<ImmutablePolicy> policies;
+    policies.resize(1); 
+    setDefaultPolicy(policies.at(0));
+    policies.at(0).setType(ImmutablePolicy::Type::ACCESS_HOLD);
+    return testEnforcementFile(policies, expectedResults, "a valid access-hold policy");
+}
 //============//
 // Test Cases //
 //============//
@@ -475,6 +641,9 @@ void policyStoreTests() {
     // test policy renew disabling - should succeed
     numFailed += !testPolicyRenewable(/* set to auto renew */ false);
 
+    // test policy migration - should success
+    numFailed += !testPolicyMove();
+
     printf(">> Passed %d of %d tests on policy store. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
@@ -488,28 +657,21 @@ void policyEnforcementTests() {
     // no policy
     numFailed += !testEnforcementFileNoPolicy();
 
-    /*
     // immutable data
     numFailed += !testEnforcementFileImmutablePolicyValid();
-    numFailed += !testEnforcementFileImmutablePolicyExpired();
 
     // modification hold
     numFailed += !testEnforcementFileModificationHoldPolicyValid();
-    numFailed += !testEnforcementFileModificationHoldPolicyExpired();
     
-    // deletion hold
-    numFailed += !testEnforcementFileDeletionHoldPolicyValid();
-    numFailed += !testEnforcementFileDeletionHoldPolicyExpired();
-
     // access hold
     numFailed += !testEnforcementFileAccessHoldPolicyValid();
-    numFailed += !testEnforcementFileAccessHoldPolicyExpired();
 
+    // deletion hold
+    numFailed += !testEnforcementFileDeletionHoldPolicyValid();
 
     printf(">> Passed %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
-    */
 
     shutdownProxy();
 }

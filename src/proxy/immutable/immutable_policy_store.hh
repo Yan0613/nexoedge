@@ -81,7 +81,15 @@ public:
      **/
     virtual ActionResult deleteAllPolicies(const File &f) = 0;
 
-    // TODO cater move (file rename) and copy (file copy)
+    /**
+     * Migrate all policies attached to a target source file to a target destination file
+     *
+     * @param[in] sf  target source file to move all attached policies from
+     * @param[in] df  target destination file to move all attached policies to
+     *
+     * @return true if the policies of the target source file are all moved to the target destination file, false otherwise
+     **/
+    virtual ActionResult moveAllPolicies(const File &sf, const File &df) = 0;
 
 private:
 };
