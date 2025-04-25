@@ -64,6 +64,14 @@ private:
      **/
     ActionResult getPolicyOnFile_(const File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy);
 
+    /**
+     * Internal function to delete the policy from the policy store
+     *
+     * @param[in] f  target file to obtain any existing policy of a target type
+     * @param[in] type  target type of the policy to obtain
+     *
+     * @return action results with success set to true and the policy set if the file no longer has the target type of policy with it, false otherwise
+     **/
     ActionResult deletePolicyOnFile_(const File &f, const ImmutablePolicy::Type type);
 
     /**

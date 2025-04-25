@@ -54,119 +54,72 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
         return result;
     }
 
-    size_t numOps = 0;
+    std::string script = " \
+        local p = redis.call('hmget', KEYS[1], ARGV[1], ARGV[2]); \
+        local policyNotExists = not p[1] and not p[2]; \
+        local policyHasExpired = true; \
+        if (p[1] and p[2]) then \
+            local policyEndTime = tonumber(p[1]) + tonumber(p[2]) * 86400; \
+            local now = tonumber(ARGV[7]); \
+            if (policyEndTime > now) then \
+                policyHasExpired = false; \
+            end \
+        end \
+        if (policyNotExists or policyHasExpired) then \
+            local res=redis.call('hmset', KEYS[1], ARGV[1], ARGV[4], ARGV[2], ARGV[5], ARGV[3], ARGV[6]); \
+            if (res) then \
+                return 0; \
+            end \
+            return 1; \
+        end \
+        return 2; \
+    ";
 
-    redisReply *r = NULL;
-    // avoid concurrent modification to the policy
-    r = (redisReply*) redisCommand(
+    time_t timeNow;
+    time(&timeNow);
+
+    redisReply *r = (redisReply*) redisCommand(
         _cxt
-        , "WATCH %b"
+        , "EVAL %s 1 %b %s %s %s %i %i %s %i"
+        , script.c_str()
         , policyKey, keyLength
+        , policyFieldStartDate
+        , policyFieldDuration
+        , policyFieldAutoRenew
+        , policy.getStartDate()
+        , policy.getDuration()
+        , policy.isRenewable()? "1" : "0"
+        , timeNow
     );
 
-    if (r == NULL || (r->type != REDIS_REPLY_STRING && r->type != REDIS_REPLY_STATUS) || strncmp(r->str, "OK", r->len) != 0) {
+    if (r == NULL) {
+        // the policy store is not responding
+        result._success = false;
         result._errorMsg
-                .append("Failed to watch the policy key of the ")
+                .append("Failed to set the ")
                 .append(ImmutablePolicy::TypeString[policyType])
                 .append(" policy of file ")
                 .append(f.name)
-                .append(" to set the policy")
+                .append(" due to policy store connection error.");
+        reconnect();
+    } else if (r->type != REDIS_REPLY_INTEGER || r->integer != 0) {
+        // the policy extension failed
+        result._success = false;
+        result._errorMsg
+                .append("Failed to set the ")
+                .append(ImmutablePolicy::TypeString[policyType])
+                .append(" policy of file ")
+                .append(f.name)
                 .append(" (reply type = ")
-                .append(std::to_string(policyType))
-                .append(")")
-        ;
+                .append(std::to_string(r->type))
+                .append(" integer = ")
+                .append(std::to_string(r->integer))
+                .append(")");
         LOG(ERROR) << result._errorMsg;
-        if (r == NULL) { reconnect(); }
-        freeReplyObject(r);
-        return result;
-    }
-
-    freeReplyObject(r);
-
-    // set the policy
-    // start the transaction
-    redisAppendCommand(
-        _cxt
-        , "MULTI"
-    );
-    numOps++;
-    // add the fields
-    redisAppendCommand(
-        _cxt
-        , "HSETNX %b %s %i"
-        , policyKey, keyLength
-        , policyFieldStartDate
-        , policy.getStartDate()
-    );
-    numOps++;
-    redisAppendCommand(
-        _cxt
-        , "HSETNX %b %s %i"
-        , policyKey, keyLength
-        , policyFieldDuration
-        , policy.getDuration()
-    );
-    numOps++;
-    redisAppendCommand(
-        _cxt
-        , "HSETNX %b %s %s"
-        , policyKey, keyLength
-        , policyFieldAutoRenew
-        , policy.isRenewable()? "1" : "0"
-    );
-    numOps++;
-    // end the transaction
-    redisAppendCommand(
-        _cxt
-        , "EXEC"
-    );
-    numOps++;
-
-    // assume the transaction is successful first and check for any error
-    result._success = true;
-
-    // get the policy-set transaction results
-    for (size_t i = 0; i < numOps; i++) {
-        if (redisGetReply(_cxt, (void**) &r) != REDIS_OK || r->type == REDIS_REPLY_ERROR) {
-            // the policy store is not connecting or responding an error
-            result._success = false;
-            result._errorMsg
-                    .append("Failed to get a reply (request ")
-                    .append(std::to_string(i+1))
-                    .append(") on setting the ")
-                    .append(ImmutablePolicy::TypeString[policyType])
-                    .append(" policy of file ")
-                    .append(f.name);
-            LOG(ERROR) << result._errorMsg;
-            if (r == NULL) { reconnect(); }
-        } else if (i + 1 == numOps) {
-            // check for the expected responses at the end of the transaction
-            if (r->elements != numOps - 2) {
-                result._success = false;
-                result._errorMsg
-                        .append("Failed to get all replies on setting the ")
-                        .append(ImmutablePolicy::TypeString[policyType])
-                        .append(" policy of file ")
-                        .append(f.name);
-                LOG(ERROR) << result._errorMsg;
-            }
-            // check for any request failure
-            for (size_t j = 0; j < r->elements; j++) {
-                const int type = r->element[j]->type;
-                const int res = r->element[j]->integer;
-                if (type != REDIS_REPLY_INTEGER || res != 1) {
-                    result._success = false;
-                    result._errorMsg
-                            .append("Failed to set the ")
-                            .append(ImmutablePolicy::TypeString[policyType])
-                            .append(" policy of file ")
-                            .append(f.name);
-                    LOG(ERROR) << result._errorMsg << " (reply type = " << type << " res = " << res << ")";
-                    break;
-                }
-            }
-        }
-        freeReplyObject(r);
+    } else {
+        // the policy extension is successful
+        result._success = true;
+        LOG(INFO) << "Set the " << ImmutablePolicy::TypeString[policyType] << " policy of file " << f.name;
     }
 
     return result;

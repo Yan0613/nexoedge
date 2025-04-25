@@ -165,6 +165,7 @@ bool testPolicySet(time_t startTime = 0, bool autoRenew = false, bool expectSetT
     // check if the policy is correctly retrieved 
     if (p != rp && expectSetToSucceed) {
         printf("> Failed to get the policy set!\n");
+        printf(">    Expect %s\n >    Got %s\n", p.to_string().c_str(), rp.to_string().c_str());
         return false;
     }
 
@@ -223,6 +224,7 @@ bool testPolicyExtend(int delta = 1, bool expectToSucceed = true) {
     // check if the policy is correctly retrieved 
     if (p != rp && expectToSucceed) {
         printf("> Failed to get %s after policy extension %s!\n", (expectToSucceed? "the same policy" : "different policies"), (expectToSucceed? "succeeded" : "failed"));
+        printf(">    Expect %s\n >    Got %s\n", p.to_string().c_str(), rp.to_string().c_str());
         return false;
     }
 
