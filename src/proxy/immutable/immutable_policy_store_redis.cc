@@ -136,7 +136,7 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
     } else {
         // the policy extension is successful
         result._success = true;
-        LOG(INFO) << "Set the " << ImmutablePolicy::TypeString[policyType] << " policy of file " << f.name;
+        LOG(INFO) << "Set the " << ImmutablePolicy::TypeString[policyType] << " policy of file " << f.name << ": " << policy.to_string();
     }
 
     return result;
@@ -253,7 +253,7 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
     } else {
         // the policy extension is successful
         result._success = true;
-        LOG(INFO) << "Extended the " << ImmutablePolicy::TypeString[policyType] << " policy of file " << f.name;
+        LOG(INFO) << "Extended the " << ImmutablePolicy::TypeString[policyType] << " policy of file " << f.name << ": " << policy.to_string();
     }
 
     return result;
@@ -493,6 +493,8 @@ ActionResult ImmutableRedisPolicyStore::moveAllPolicies(const File &sf, const Fi
         freeReplyObject(r);
     }
 
+    LOG(INFO) << "Moved all policies of file " << sf.name << " to file " << df.name;
+
     return result;
 }
 
@@ -650,7 +652,7 @@ ActionResult ImmutableRedisPolicyStore::getPolicyOnFile_(const File &f, const Im
     // mark the operation as successful
     result._success = true;
     
-    LOG(INFO) << "Obtained the " << ImmutablePolicy::TypeString[type] << " policy of file " << f.name << ".";
+    LOG(INFO) << "Obtained the " << ImmutablePolicy::TypeString[type] << " policy of file " << f.name << ": " << policy.to_string();
 
     return result;
 }

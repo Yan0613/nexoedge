@@ -516,13 +516,13 @@ bool testEnforcementFileModificationHoldPolicyValid() {
 
 bool testEnforcementFileDeletionHoldPolicyValid() {
     std::map<int, bool> expectedResults;
-    expectedResults[WRITE] = false;
-    expectedResults[OVERWRITE] = false;
-    expectedResults[APPEND] = false;
+    expectedResults[WRITE] = true;
+    expectedResults[OVERWRITE] = true;
+    expectedResults[APPEND] = true;
     expectedResults[READ] = true;
     expectedResults[RENAME] = true;
     expectedResults[COPY] = true;
-    expectedResults[DELETE] = true;
+    expectedResults[DELETE] = false;
     std::vector<ImmutablePolicy> policies;
     policies.resize(1); 
     setDefaultPolicy(policies.at(0));
