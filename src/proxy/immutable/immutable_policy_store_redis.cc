@@ -54,6 +54,23 @@ ActionResult ImmutableRedisPolicyStore::setPolicyOnFile(const File &f, const Imm
         return result;
     }
 
+    // script inputs
+    // KEYS[1]: policy key
+    // ARGV[1]: field name for policy start date
+    // ARGV[2]: field name for valid period
+    // ARGV[3]: field name for auto renew state
+    // ARGV[4]: policy start date
+    // ARGV[5]: valid period
+    // ARGV[6]: auto renew state
+    // ARGV[7]: time now
+    // 
+    // the script does the following:
+    // 1. Get any current policy
+    // 2. If the policy exist and user-provided policy end date is before the existing one, then do nothing.
+    // 3. Otherwise, (set and) store the new user-provided policy
+    // the script returns 0 on a successful policy set,
+    //                    1 on an unsuccessful policy set attempt,
+    //                    2 if an policy of the same type exists and the user-provided policy does not extend the existing policy
     std::string script = " \
         local p = redis.call('hmget', KEYS[1], ARGV[1], ARGV[2]); \
         local policyNotExists = not p[1] and not p[2]; \
@@ -166,11 +183,14 @@ ActionResult ImmutableRedisPolicyStore::extendPolicyOnFile(const File &f, const 
 
     // script inputs
     // KEYS[1]: policy key
-    // ARGV[1]: field name for valid period
-    // ARGV[2]: new valid period
+    // ARGV[1]: field name for policy start date
+    // ARGV[2]: field name for valid period
+    // ARGV[3]: (new) policy start date
+    // ARGV[4]: new valid period
+    // 
     // the script does the following:
     // 1. Get the current start date and valid period.
-    // 2. If the policy does not exist (d is nil), then do nothing.
+    // 2. If the policy does not exist (p[1] or p[2] is nil), then do nothing.
     // 3. If the user-input new end date extends the existing one, update to the new start date and valid period.
     // 4. Otherwise, do nothing.
     // the script returns 0 on a successful extension,
@@ -265,6 +285,7 @@ ActionResult ImmutableRedisPolicyStore::renewPolicyOnFile(const File &f, const I
     // ARGV[3]: field name for auto renew state
     // ARGV[4]: time now
     // ARGV[5]: new auto renew state to set
+    // 
     // the script does the following:
     // 1. Get the current start date, valid period, and auto renew state of the target policy.
     // 2. If the policy does not exist (p[1] or p[2] or p[3] is nil), then do nothing.
