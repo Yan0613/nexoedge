@@ -43,6 +43,16 @@ bool ImmutablePolicy::setType(const ImmutablePolicy::Type type) {
     return true;
 }
 
+bool ImmutablePolicy::setType(const std::string type) {
+    for (int policyType = 0; policyType < static_cast<int>(ImmutablePolicy::Type::UNKNOWN_IMMUTABLE_POLICY); policyType++) {
+        if (type.compare(ImmutablePolicy::TypeString[policyType]) == 0) {
+            _type = static_cast<ImmutablePolicy::Type>(policyType);
+            return true;
+        }
+    }
+    return false;
+}
+
 ImmutablePolicy::Type ImmutablePolicy::getType() const {
     return _type;
 }
@@ -67,6 +77,11 @@ bool ImmutablePolicy::setStartDate(const time_t startDate) {
     _start = newTime;
 
     return true;
+}
+
+bool ImmutablePolicy::setStartDate(const std::string startDate) {
+    struct tm newStartDate = convertTimeFromRFC7231(startDate);
+    return setStartDate(convertStartDateToUTC(newStartDate));
 }
 
 time_t ImmutablePolicy::getStartDate() const {
@@ -177,4 +192,10 @@ std::string ImmutablePolicy::convertTimeToRFC7231(const struct tm &t) const {
         timeStr = std::string(date, length);
     }
     return timeStr;
+}
+
+struct tm ImmutablePolicy::convertTimeFromRFC7231(const std::string t) const {
+    struct tm time;
+    strptime(t.c_str(), "%w, %d %b %Y %T GMT", &time);
+    return time;
 }

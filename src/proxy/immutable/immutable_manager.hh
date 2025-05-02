@@ -5,6 +5,7 @@
 
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "../../common/define.hh"
 #include "../../ds/immutable_policy.hh"
@@ -25,7 +26,7 @@ public:
      *
      * @return true if the policy is successfully attached, false otherwise
      **/
-    bool setPolicy(const File &f, const ImmutablePolicy &policy) const;
+    bool setPolicy(File &f, const ImmutablePolicy &policy) const;
 
     /**
      * Obtain any policy of a given type on the target file
@@ -36,7 +37,19 @@ public:
      *
      * @return true if the policy is successfully obtained, false otherwise
      **/
-    bool getPolicy(const File &f, ImmutablePolicy::Type type, ImmutablePolicy &policy) const;
+    bool getPolicy(File &f, ImmutablePolicy::Type type, ImmutablePolicy &policy) const;
+
+    /**
+     * Obtain any policy of a given type on the target file
+     *
+     * @param[in] f        the target file
+     * @param[in] type     type of policy to obtain 
+     * @param[out] policy  all policies obtained
+     *
+     * @return true if the policy is successfully obtained, false otherwise
+     **/
+    std::vector<ImmutablePolicy> getAllPolicies(File &f) const;
+
     /**
      * Extend an existing policy on the target file
      *
@@ -45,7 +58,7 @@ public:
      *
      * @return true if the policy is successfully extended, false otherwise
      **/
-    bool extendPolicy(const File &f, const ImmutablePolicy &policy) const;
+    bool extendPolicy(File &f, const ImmutablePolicy &policy) const;
 
     /**
      * Update the auto renew state of an existing policy on the target file
@@ -55,7 +68,7 @@ public:
      *
      * @return true if the auto renew state of the policy is successfully updated, false otherwise
      **/
-    bool renewPolicy(const File &f, const ImmutablePolicy &policy) const;
+    bool renewPolicy(File &f, const ImmutablePolicy &policy) const;
 
     /**
      * Remove all existing policy on the target file
@@ -64,7 +77,7 @@ public:
      *
      * @return true if the file no longer has any policy, false otherwise
      **/
-    bool deleteAllPolicy(const File &f) const;
+    bool deleteAllPolicy(File &f) const;
 
     /**
      * Migrate all existing policy from the target source file to the target destination file
@@ -74,7 +87,7 @@ public:
      *
      * @return true if all policies of the source file are migrated, false otherwise
      **/
-    bool moveAllPolicy(const File &sf, const File &df) const;
+    bool moveAllPolicy(File &sf, File &df) const;
 
     // policy checks
 
@@ -85,7 +98,7 @@ public:
      *
      * @return true if there is a valid immutable policy on the file, false otherwise
      **/
-    bool isImmutable(const File &f) const;
+    bool isImmutable(File &f) const;
 
     /**
      * Check if the target file has a valid deletion-hold policy
@@ -94,7 +107,7 @@ public:
      *
      * @return true if there is a valid deletion-hold policy on the file, false otherwise
      **/
-    bool isOnDeleteHold(const File &f) const;
+    bool isOnDeleteHold(File &f) const;
 
     /**
      * Check if the target file has a valid modification-hold policy
@@ -103,7 +116,7 @@ public:
      *
      * @return true if there is a valid modification-hold policy on the file, false otherwise
      **/
-    bool isOnModificationHold(const File &f) const;
+    bool isOnModificationHold(File &f) const;
 
     /**
      * Check if the target file has a valid access-hold policy
@@ -112,7 +125,7 @@ public:
      *
      * @return true if there is a valid access-hold policy on the file, false otherwise
      **/
-    bool isOnAccessHold(const File &f) const;
+    bool isOnAccessHold(File &f) const;
 
 private:
 
@@ -124,7 +137,16 @@ private:
      *
      * @return true if there is a valid policy of the target type on the file, false otherwise
      **/
-    bool isPolicyValid(const File &f, ImmutablePolicy::Type type) const;
+    bool isPolicyValid(File &f, ImmutablePolicy::Type type) const;
+
+    /**
+     * Initialize file namespace id to default if not provided
+     *
+     * @param[in,out] f    the target file
+     *
+     * @return return true if the namespace id is set to default, false otherwise
+     **/ 
+    bool initFileNamespaceId(File &f) const;
 
     ImmutablePolicyStore *_policyStore = nullptr;        /**< immutable policy store */
 };

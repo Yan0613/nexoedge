@@ -21,48 +21,68 @@ ImmutableManager::~ImmutableManager() {
     delete _policyStore;
 }
 
-bool ImmutableManager::setPolicy(const File &f, const ImmutablePolicy &policy) const {
+bool ImmutableManager::setPolicy(File &f, const ImmutablePolicy &policy) const {
+    initFileNamespaceId(f);
     return _policyStore->setPolicyOnFile(f, policy).success();
 }
 
-bool ImmutableManager::getPolicy(const File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy) const {
+bool ImmutableManager::getPolicy(File &f, const ImmutablePolicy::Type type, ImmutablePolicy &policy) const {
+    initFileNamespaceId(f);
     return _policyStore->getPolicyOnFile(f, policy.getType(), policy).success();
 }
 
-bool ImmutableManager::extendPolicy(const File &f, const ImmutablePolicy &policy) const {
+std::vector<ImmutablePolicy> ImmutableManager::getAllPolicies(File &f) const {
+    initFileNamespaceId(f);
+    return _policyStore->getAllPoliciesOnFile(f);
+}
+
+bool ImmutableManager::extendPolicy(File &f, const ImmutablePolicy &policy) const {
+    initFileNamespaceId(f);
     return _policyStore->extendPolicyOnFile(f, policy).success();
 }
 
-bool ImmutableManager::renewPolicy(const File &f, const ImmutablePolicy &policy) const {
+bool ImmutableManager::renewPolicy(File &f, const ImmutablePolicy &policy) const {
+    initFileNamespaceId(f);
     return _policyStore->renewPolicyOnFile(f, policy.getType(), policy.isRenewable()).success();
 }
 
-bool ImmutableManager::deleteAllPolicy(const File &f) const {
+bool ImmutableManager::deleteAllPolicy(File &f) const {
+    initFileNamespaceId(f);
     return _policyStore->deleteAllPolicies(f).success();
 }
 
-bool ImmutableManager::moveAllPolicy(const File &sf, const File &df) const {
+bool ImmutableManager::moveAllPolicy(File &sf, File &df) const {
+    initFileNamespaceId(sf);
+    initFileNamespaceId(df);
     return _policyStore->moveAllPolicies(sf, df).success();
 }
 
-bool ImmutableManager::isImmutable(const File &f) const {
+bool ImmutableManager::isImmutable(File &f) const {
     return isPolicyValid(f, ImmutablePolicy::Type::IMMUTABLE);
 }
 
-bool ImmutableManager::isOnDeleteHold(const File &f) const {
+bool ImmutableManager::isOnDeleteHold(File &f) const {
     return isPolicyValid(f, ImmutablePolicy::Type::DELETION_HOLD);
 }
 
-bool ImmutableManager::isOnModificationHold(const File &f) const {
+bool ImmutableManager::isOnModificationHold(File &f) const {
     return isPolicyValid(f, ImmutablePolicy::Type::MODIFICATION_HOLD);
 }
 
-bool ImmutableManager::isOnAccessHold(const File &f) const {
+bool ImmutableManager::isOnAccessHold(File &f) const {
     return isPolicyValid(f, ImmutablePolicy::Type::ACCESS_HOLD);
 }
 
-bool ImmutableManager::isPolicyValid(const File &f, ImmutablePolicy::Type type) const {
+bool ImmutableManager::isPolicyValid(File &f, ImmutablePolicy::Type type) const {
     ImmutablePolicy p;
+    initFileNamespaceId(f);
     ImmutablePolicyStore::ActionResult result = _policyStore->getPolicyOnFile(f, type, p);
     return result.success() && !p.isExpired();
+}
+
+bool ImmutableManager::initFileNamespaceId(File &f) const {
+    if (f.namespaceId == INVALID_NAMESPACE_ID) {
+        f.namespaceId = Config::getInstance().getProxyNamespaceId();
+    }
+    return false;
 }

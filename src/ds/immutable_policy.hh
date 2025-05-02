@@ -53,6 +53,14 @@ public:
      **/
     bool setType(const Type type);
     /**
+     * Set the type of the policy
+     *
+     * @param[in] type  type of the policy
+     *
+     * @return if the new type of the policy is set
+     **/
+    bool setType(std::string type);
+    /**
      * Obtain the type of the policy
      *
      * @return the type of the policy
@@ -68,6 +76,15 @@ public:
      * @return if the new start date of the policy is set
      **/
     bool setStartDate(const time_t startDate);
+
+    /**
+     * Set the start date of the policy (the start date is always rounded to 00:00:00UTC on the same day) 
+     *
+     * @param[in] startDate  start date of the policy in UTC time and RFC 7231 (format "Www, dd Mmm yyyy HH:mm:ss GMT")
+     *
+     * @return if the new start date of the policy is set
+     **/
+    bool setStartDate(const std::string startDate);
 
     /**
      * Obtain the start date of the policy
@@ -111,7 +128,7 @@ public:
     /**
      * Obtain the end date of the policy
      *
-     * @return the end date of the policy in UTC timeand RFC 7231 (format "Www, dd Mmm yyyy HH:mm:ss GMT")
+     * @return the end date of the policy in UTC time and RFC 7231 (format "Www, dd Mmm yyyy HH:mm:ss GMT")
      **/
     std::string getEndDateString() const;
 
@@ -178,6 +195,7 @@ private:
 
     time_t convertStartDateToUTC(const struct tm &t) const;
     std::string convertTimeToRFC7231(const struct tm &t) const;
+    struct tm convertTimeFromRFC7231(const std::string t) const;
 
     // internal fields of a policy
     Type _type = UNKNOWN_IMMUTABLE_POLICY;  /**< type of the policy */

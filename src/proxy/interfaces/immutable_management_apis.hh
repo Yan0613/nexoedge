@@ -82,6 +82,22 @@ private:
         http::status httpStatus
     );
 
+    template <class Body, class Allocator>
+    static http::response<http::string_body> genRequestSuccessResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req
+    );
+
+    template <class Body, class Allocator>
+    static http::response<http::string_body> genRequestFailedResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req
+    );
+
+    template <class Body, class Allocator>
+    static http::response<http::string_body> genBadRequestResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req,
+            const beast::string_view why
+    );
+
     template <class Body, class Allocator, class Send> 
     static void handleNewRequest(
         http::request<Body, http::basic_fields<Allocator>>&& req,
@@ -119,6 +135,13 @@ private:
     static const char *REQ_PATH_RENEW;
     static const char *REQ_PATH_GET;
     static const char *REQ_PATH_GETALL;
+
+    static const char *REQ_BODY_KEY_FILENAME;
+    static const char *REQ_BODY_KEY_POLICY;
+    static const char *REQ_BODY_SUBKEY_POLICY_TYPE;
+    static const char *REQ_BODY_SUBKEY_POLICY_START_DATE;
+    static const char *REQ_BODY_SUBKEY_POLICY_DURATION;
+    static const char *REQ_BODY_SUBKEY_POLICY_AUTO_RENEW;
 
     // server listening and worker threads
     const int MAX_SERVER_THREADS = 1024;
@@ -213,6 +236,24 @@ protected:
         tcp::acceptor _acceptor;
         std::shared_ptr<ImmutableManager> _immutableManager = nullptr;
     };
+
+    class PolicyApiRequestBody {
+    public:
+        PolicyApiRequestBody(std::string_view jsonBody);
+        ~PolicyApiRequestBody();
+
+        std::string getObjectName() const;
+        ImmutablePolicy getImmutablePolicy() const;
+
+        bool hasPolicyType() const;
+        bool hasPolicyAutoRenew() const;
+        bool hasFullPolicy() const;
+        bool hasObjectName() const;
+
+    private:
+        nlohmann::json _parsedJson;
+    };
+
 };
 
 #endif //define __IMMUTABLE_MGT_APIS_HH__

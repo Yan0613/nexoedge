@@ -18,6 +18,13 @@ const char *ImmutableManagementApis::REQ_PATH_RENEW = "/renew";
 const char *ImmutableManagementApis::REQ_PATH_GET = "/get";
 const char *ImmutableManagementApis::REQ_PATH_GETALL = "/getall";
 
+const char *ImmutableManagementApis::REQ_BODY_KEY_FILENAME = "name";
+const char *ImmutableManagementApis::REQ_BODY_KEY_POLICY = "policy";
+const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE = "type";
+const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_START_DATE = "start_date";
+const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION = "duration";
+const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_AUTO_RENEW = "auto_renew";
+
 ImmutableManagementApis::ImmutableManagementApis(
         std::shared_ptr<ImmutableManager> immutableManager
 ) : _httpServerWorkerCxtPool(16), _immutableManager(immutableManager) {
@@ -199,46 +206,39 @@ template <class Body, class Allocator>
     return res;
 }
 
+template <class Body, class Allocator>
+    http::response<http::string_body> ImmutableManagementApis::genRequestSuccessResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req
+) {
+    return genGeneralResponse(req, "result", "success", http::status::ok);
+}
+
+template <class Body, class Allocator>
+    http::response<http::string_body> ImmutableManagementApis::genRequestFailedResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req
+) {
+    return genGeneralResponse(req, "result", "failed", http::status::ok);
+}
+
+template <class Body, class Allocator>
+    http::response<http::string_body> ImmutableManagementApis::genBadRequestResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req,
+        const beast::string_view why
+) {
+    return genGeneralResponse(req, "error", why, http::status::bad_request);
+}
+
 template <class Body, class Allocator, class Send>
     void ImmutableManagementApis::handleNewRequest(
         http::request<Body, http::basic_fields<Allocator>>&& req,
         Send &&send,
         std::shared_ptr<ImmutableManager> immutableManager
 ) {
-    // returns a bad request response
-    auto const badRequest =
-    [&req](beast::string_view why)
-    {
-        return genGeneralResponse(req, "error", why, http::status::bad_request);
-    };
-
-    /*
-    // returns a bad request response
-    auto const echoRequest =
-    [&req](beast::string_view body) {
-        return genGeneralResponse(req, "msg", body, http::status::ok);
-    };
-
-    // returns a policy not found response
-    auto const not_found =
-    [&req]() {
-        http::response<http::string_body> res{http::status::not_found, req.version()};
-        res.prepare_payload();
-        return res;
-    };
-
-    // returns a server error response
-    auto const server_error =
-    [&req](beast::string_view what) {
-        return genGeneralResponse(req, "error", what, http::status::internal_server_error);
-    };
-    */
-
     const http::verb &method = req.method();
     beast::string_view target = req.target();
 
     if (!checkValidRequestPath(method, target)) {
-        send(badRequest("Illegal request type/path."));
+        send(genBadRequestResponse(req, "Illegal request type/path."));
         return;
     }
 
@@ -246,16 +246,14 @@ template <class Body, class Allocator, class Send>
 
     // handle the requests
     if (isLoginRequest(method, target)) {
-        if (handleLogin(req, send, immutableManager)) { return; }
+        handleLogin(req, send, immutableManager);
     } else if (isPolicyChangeRequest(method, target)) {
-        if (handlePolicyChange(req, send, immutableManager)) { return; }
+        handlePolicyChange(req, send, immutableManager);
     } else if (isPolicyInquiryRequest(method, target)) {
-        if (handlePolicyChange(req, send, immutableManager)) { return; }
+        handlePolicyInquiry(req, send, immutableManager);
     } else {
-        send(badRequest("Illegal request type/path."));
+        send(genBadRequestResponse(req, "Illegal request type/path."));
     }
-
-    send(badRequest("Illegal request parameters."));
 }
 
 template <class Body, class Allocator, class Send> 
@@ -276,12 +274,66 @@ bool ImmutableManagementApis::handlePolicyChange(
     const http::verb &method = req.method();
     beast::string_view target = req.target();
 
+    // TODO: authenticate the request issuer
+
+    PolicyApiRequestBody body(static_cast<std::string_view>(req.body()));
+
+    // check for the target file name (essential for all requests)
+    if (body.hasObjectName() == false) {
+        send(genBadRequestResponse(req, "Missing request parameter (file name)!"));
+        return false;
+    }
+
+    // get the target file and policy to set/update
+    File f;
+    std::string name = body.getObjectName();
+    f.setName(name.data(), name.size());
+    ImmutablePolicy policy = body.getImmutablePolicy();
+
     if (isPolicySetRequest(method, target)) {
-        return true;
+        // set new policy
+
+        // check the required parameters
+        if (body.hasFullPolicy() == false) {
+            send(genBadRequestResponse(req, "Missing request parameter (all policy attributes)!"));
+            return false;
+        }
+
+        if (immutableManager->setPolicy(f, policy)) {
+            send(genRequestSuccessResponse(req));
+            return true;
+        }
+        send(genRequestFailedResponse(req));
     } else if (isPolicyExtendRequest(method, target)) {
-        return true;
+        // extend an existing policy
+
+        // check the required parameters
+        if (body.hasFullPolicy() == false) {
+            send(genBadRequestResponse(req, "Missing request parameter (all policy attributes)!"));
+            return false;
+        }
+
+        if (immutableManager->extendPolicy(f, policy)) {
+            send(genRequestSuccessResponse(req));
+            return true;
+        }
+
+        send(genRequestFailedResponse(req));
     } else if (isPolicyRenewRequest(method, target)) {
-        return true;
+        // set the auto renew state of an existing policy
+
+        // check the required parameters
+        if (body.hasPolicyAutoRenew() == false || body.hasPolicyType() == false) {
+            send(genBadRequestResponse(req, "Missing request parameter (policy type or auto renew state)!"));
+            return false;
+        }
+
+        if (immutableManager->renewPolicy(f, policy)) {
+            send(genRequestSuccessResponse(req));
+            return true;
+        }
+
+        send(genRequestFailedResponse(req));
     }
 
     return false;
@@ -296,9 +348,39 @@ bool ImmutableManagementApis::handlePolicyInquiry(
     const http::verb &method = req.method();
     beast::string_view target = req.target();
 
+    // TODO: authenticate the request issuer
+
+    PolicyApiRequestBody body(static_cast<std::string_view>(req.body()));
+
+    // check for the target file name (essential for all requests)
+    if (body.hasObjectName() == false) {
+        send(genBadRequestResponse(req, "Missing request parameter (file name)!"));
+        return false;
+    }
+
+
+    // get the target file and policy to set/update
+    File f;
+    std::string name = body.getObjectName();
+    f.setName(name.data(), name.size());
+
     if (isPolicyGetRequest(method, target)) {
+        if (!body.hasPolicyType()) {
+            send(genBadRequestResponse(req, "Missing request parameter (policy type)!"));
+            return false;
+        }
+        ImmutablePolicy policy = body.getImmutablePolicy();
+        bool policyExists = immutableManager->getPolicy(f, policy.getType(), policy);
+        LOG(INFO) << "Result: " << policyExists << " and " << policy.to_string();
+        // TODO send the response
         return true;
     } else if (isPolicyGetAllRequest(method, target)) {
+        std::vector<ImmutablePolicy> policies = immutableManager->getAllPolicies(f);
+        LOG(INFO) << "Result: " << policies.size() << " policies.";
+        for (size_t i = 0; i < policies.size(); i++) {
+            LOG(INFO) << "policy [" << i << "] " << policies[i].to_string();
+        }
+        // TODO send the response
         return true;
     }
     return false;
@@ -571,4 +653,92 @@ void ImmutableManagementApis::Session::doClose() {
 }
 
 void ImmutableManagementApis::Session::onShutdown(beast::error_code ec) {
+}
+
+ImmutableManagementApis::PolicyApiRequestBody::PolicyApiRequestBody(
+        std::string_view jsonBody
+) {
+    try {
+        _parsedJson = nlohmann::json::parse(jsonBody);
+    } catch (std::exception &e) {
+    }
+}
+
+ImmutableManagementApis::PolicyApiRequestBody::~PolicyApiRequestBody() {
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasObjectName() const {
+    return
+        !_parsedJson.is_null()
+        && !_parsedJson[REQ_BODY_KEY_FILENAME].is_null()
+    ;
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyType() const {
+    return
+        !_parsedJson.is_null()
+        && !_parsedJson[REQ_BODY_KEY_POLICY].is_null()
+        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_TYPE].is_null()
+    ;
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyAutoRenew() const {
+    return
+        !_parsedJson.is_null()
+        && !_parsedJson[REQ_BODY_KEY_POLICY].is_null()
+        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_null()
+    ;
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasFullPolicy() const {
+    return
+        !_parsedJson.is_null()
+        && !_parsedJson[REQ_BODY_KEY_POLICY].is_null()
+        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_TYPE].is_null()
+        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_START_DATE].is_null()
+        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_DURATION].is_null()
+        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_null()
+    ;
+}
+
+std::string ImmutableManagementApis::PolicyApiRequestBody::getObjectName() const {
+    try {
+        return _parsedJson[REQ_BODY_KEY_FILENAME].get<std::string>();
+    } catch (std::exception &e) {
+    }
+    return "";
+}
+
+ImmutablePolicy ImmutableManagementApis::PolicyApiRequestBody::getImmutablePolicy() const {
+    try {
+        ImmutablePolicy policy;
+
+        // set policy type
+        auto &type = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_TYPE];
+        if (type.is_string()) {
+            policy.setType(type.get<std::string>());
+        }
+
+        // set policy start date (if available)
+        auto &startDate = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_START_DATE];
+        if (startDate.is_string()) {
+            policy.setStartDate(startDate.get<std::string>());
+        }
+
+        // set policy duration (if available)
+        auto &duration = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_DURATION];
+        if (duration.is_number_unsigned()) {
+            policy.setStartDate(duration.get<int>());
+        }
+
+        // set policy auto renew
+        auto &autoRenew = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW];
+        if (autoRenew.is_number_unsigned()) {
+            policy.setRenewable(duration.get<int>() > 0);
+        }
+
+        return policy;
+    } catch (std::exception &e) {
+    }
+    return ImmutablePolicy(); 
 }

@@ -1524,7 +1524,7 @@ bool Proxy::deleteFile(const File &f) {
     LOG(INFO) << "Delete file " << f.name << ", completes in " << all.elapsed().wall * 1.0 / 1e9 << " s";
     
     // remove the immutable policy of the file
-    _immutableManager->deleteAllPolicy(f);
+    _immutableManager->deleteAllPolicy(df);
 
     return true;
 }
