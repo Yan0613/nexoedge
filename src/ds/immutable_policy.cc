@@ -57,6 +57,10 @@ ImmutablePolicy::Type ImmutablePolicy::getType() const {
     return _type;
 }
 
+std::string ImmutablePolicy::getTypeName() const {
+    return TypeString[_type];
+}
+
 bool ImmutablePolicy::setStartDate(const time_t startDate) {
     struct tm newStartDate;
 
@@ -196,6 +200,6 @@ std::string ImmutablePolicy::convertTimeToRFC7231(const struct tm &t) const {
 
 struct tm ImmutablePolicy::convertTimeFromRFC7231(const std::string t) const {
     struct tm time;
-    strptime(t.c_str(), "%w, %d %b %Y %T GMT", &time);
+    strptime(t.c_str(), "%a, %d %b %Y %T GMT", &time);
     return time;
 }

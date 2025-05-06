@@ -20,6 +20,8 @@ namespace net = boost::asio;            // from <boost/asio.hpp>
 namespace ssl = boost::asio::ssl;       // from <boost/asio/ssl.hpp>
 using tcp = boost::asio::ip::tcp;       // from <boost/asio/ip/tcp.hpp>
 
+using json = nlohmann::json;
+
 class ImmutableManagementApis {
 public:
 
@@ -83,6 +85,13 @@ private:
     );
 
     template <class Body, class Allocator>
+    static http::response<http::string_body> genGeneralResponse(
+            http::request<Body, http::basic_fields<Allocator>>& req,
+            json bodyJson,
+            http::status httpStatus
+    );
+
+    template <class Body, class Allocator>
     static http::response<http::string_body> genRequestSuccessResponse(
         http::request<Body, http::basic_fields<Allocator>>& req
     );
@@ -127,6 +136,7 @@ private:
     );
 
     bool loadServerCertificate(ssl::context &ctx) const;
+    static void addPolicyToJson(const ImmutablePolicy &policy, json &json);
 
     // request path/target definitions
     static const char *REQ_PATH_LOGIN;
@@ -246,12 +256,14 @@ protected:
         ImmutablePolicy getImmutablePolicy() const;
 
         bool hasPolicyType() const;
+        bool hasPolicyStartDate() const;
+        bool hasPolicyDuration() const;
         bool hasPolicyAutoRenew() const;
         bool hasFullPolicy() const;
         bool hasObjectName() const;
 
     private:
-        nlohmann::json _parsedJson;
+        json _parsedJson;
     };
 
 };

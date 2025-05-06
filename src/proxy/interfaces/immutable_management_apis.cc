@@ -25,6 +25,8 @@ const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_START_DATE = "start_
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION = "duration";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_AUTO_RENEW = "auto_renew";
 
+using json = nlohmann::json;
+
 ImmutableManagementApis::ImmutableManagementApis(
         std::shared_ptr<ImmutableManager> immutableManager
 ) : _httpServerWorkerCxtPool(16), _immutableManager(immutableManager) {
@@ -199,8 +201,22 @@ template <class Body, class Allocator>
     http::response<http::string_body> res{httpStatus, req.version()};
     res.set(http::field::content_type, "text/json");
     res.keep_alive(req.keep_alive());
-    nlohmann::json bodyJson;
+    json bodyJson;
     bodyJson[key] = value;
+    res.body() = bodyJson.dump();
+    res.prepare_payload();
+    return res;
+}
+
+template <class Body, class Allocator>
+    http::response<http::string_body> ImmutableManagementApis::genGeneralResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req,
+        json bodyJson,
+        http::status httpStatus
+) {
+    http::response<http::string_body> res{httpStatus, req.version()};
+    res.set(http::field::content_type, "text/json");
+    res.keep_alive(req.keep_alive());
     res.body() = bodyJson.dump();
     res.prepare_payload();
     return res;
@@ -308,8 +324,12 @@ bool ImmutableManagementApis::handlePolicyChange(
         // extend an existing policy
 
         // check the required parameters
-        if (body.hasFullPolicy() == false) {
-            send(genBadRequestResponse(req, "Missing request parameter (all policy attributes)!"));
+        if (
+                body.hasPolicyType() == false
+                || body.hasPolicyStartDate() == false
+                || body.hasPolicyDuration() == false
+        ) {
+            send(genBadRequestResponse(req, "Missing request parameter (policy type/start date/period)!"));
             return false;
         }
 
@@ -337,6 +357,13 @@ bool ImmutableManagementApis::handlePolicyChange(
     }
 
     return false;
+}
+
+void ImmutableManagementApis::addPolicyToJson(const ImmutablePolicy &policy, json &json) {
+    json[REQ_BODY_SUBKEY_POLICY_TYPE] = policy.getTypeName();
+    json[REQ_BODY_SUBKEY_POLICY_START_DATE] = policy.getStartDateString();
+    json[REQ_BODY_SUBKEY_POLICY_DURATION] = policy.getDuration();
+    json[REQ_BODY_SUBKEY_POLICY_AUTO_RENEW] = policy.isRenewable();
 }
 
 template <class Body, class Allocator, class Send> 
@@ -369,18 +396,28 @@ bool ImmutableManagementApis::handlePolicyInquiry(
             send(genBadRequestResponse(req, "Missing request parameter (policy type)!"));
             return false;
         }
+        // fetch the policy if any
         ImmutablePolicy policy = body.getImmutablePolicy();
         bool policyExists = immutableManager->getPolicy(f, policy.getType(), policy);
-        LOG(INFO) << "Result: " << policyExists << " and " << policy.to_string();
-        // TODO send the response
+        // send the response
+        json res = json::object();
+        if (policyExists) {
+            addPolicyToJson(policy, res);
+        }
+        send(genGeneralResponse(req, res, http::status::ok));
         return true;
     } else if (isPolicyGetAllRequest(method, target)) {
+        // fetch all policies if any
         std::vector<ImmutablePolicy> policies = immutableManager->getAllPolicies(f);
-        LOG(INFO) << "Result: " << policies.size() << " policies.";
+        // send the response
+        json res = json::array();
         for (size_t i = 0; i < policies.size(); i++) {
+            json item;
+            addPolicyToJson(policies[i], item); 
+            res.push_back(item);
             LOG(INFO) << "policy [" << i << "] " << policies[i].to_string();
         }
-        // TODO send the response
+        send(genGeneralResponse(req, res, http::status::ok));
         return true;
     }
     return false;
@@ -659,7 +696,7 @@ ImmutableManagementApis::PolicyApiRequestBody::PolicyApiRequestBody(
         std::string_view jsonBody
 ) {
     try {
-        _parsedJson = nlohmann::json::parse(jsonBody);
+        _parsedJson = json::parse(jsonBody);
     } catch (std::exception &e) {
     }
 }
@@ -670,34 +707,64 @@ ImmutableManagementApis::PolicyApiRequestBody::~PolicyApiRequestBody() {
 bool ImmutableManagementApis::PolicyApiRequestBody::hasObjectName() const {
     return
         !_parsedJson.is_null()
-        && !_parsedJson[REQ_BODY_KEY_FILENAME].is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_FILENAME)
+        && _parsedJson[REQ_BODY_KEY_FILENAME].is_string()
     ;
 }
 
 bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyType() const {
     return
         !_parsedJson.is_null()
-        && !_parsedJson[REQ_BODY_KEY_POLICY].is_null()
-        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_TYPE].is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_POLICY)
+        && _parsedJson[REQ_BODY_KEY_POLICY].is_object()
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_TYPE)
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_TYPE].is_string()
+    ;
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyStartDate() const {
+    return
+        !_parsedJson.is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_POLICY)
+        && _parsedJson[REQ_BODY_KEY_POLICY].is_object()
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_START_DATE)
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_START_DATE].is_string()
+    ;
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyDuration() const {
+    return
+        !_parsedJson.is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_POLICY)
+        && _parsedJson[REQ_BODY_KEY_POLICY].is_object()
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_DURATION)
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_DURATION].is_number_unsigned()
     ;
 }
 
 bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyAutoRenew() const {
     return
         !_parsedJson.is_null()
-        && !_parsedJson[REQ_BODY_KEY_POLICY].is_null()
-        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_POLICY)
+        && _parsedJson[REQ_BODY_KEY_POLICY].is_object()
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_AUTO_RENEW)
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_number_unsigned()
     ;
 }
 
 bool ImmutableManagementApis::PolicyApiRequestBody::hasFullPolicy() const {
     return
         !_parsedJson.is_null()
-        && !_parsedJson[REQ_BODY_KEY_POLICY].is_null()
-        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_TYPE].is_null()
-        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_START_DATE].is_null()
-        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_DURATION].is_null()
-        && !_parsedJson[REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_POLICY)
+        && _parsedJson[REQ_BODY_KEY_POLICY].is_object()
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_TYPE)
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_START_DATE)
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_DURATION)
+        && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_AUTO_RENEW)
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_TYPE].is_string()
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_START_DATE].is_string()
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_DURATION].is_number_unsigned()
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_number_unsigned()
     ;
 }
 
@@ -710,35 +777,33 @@ std::string ImmutableManagementApis::PolicyApiRequestBody::getObjectName() const
 }
 
 ImmutablePolicy ImmutableManagementApis::PolicyApiRequestBody::getImmutablePolicy() const {
-    try {
-        ImmutablePolicy policy;
+    ImmutablePolicy policy;
 
-        // set policy type
+    // set policy type
+    if (hasPolicyType()) {
         auto &type = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_TYPE];
-        if (type.is_string()) {
-            policy.setType(type.get<std::string>());
-        }
-
-        // set policy start date (if available)
-        auto &startDate = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_START_DATE];
-        if (startDate.is_string()) {
-            policy.setStartDate(startDate.get<std::string>());
-        }
-
-        // set policy duration (if available)
-        auto &duration = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_DURATION];
-        if (duration.is_number_unsigned()) {
-            policy.setStartDate(duration.get<int>());
-        }
-
-        // set policy auto renew
-        auto &autoRenew = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW];
-        if (autoRenew.is_number_unsigned()) {
-            policy.setRenewable(duration.get<int>() > 0);
-        }
-
-        return policy;
-    } catch (std::exception &e) {
+        policy.setType(type.get<std::string>());
     }
-    return ImmutablePolicy(); 
+
+    // set policy start date (if available)
+    if (hasPolicyStartDate()) {
+        auto &startDate = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_START_DATE];
+        policy.setStartDate(startDate.get<std::string>());
+    }
+
+    // set policy duration (if available)
+    if (hasPolicyDuration()) {
+        auto &duration = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_DURATION];
+        policy.setDuration(duration.get<int>());
+    }
+
+    // set policy auto renew
+    if (hasPolicyAutoRenew()) {
+        auto &autoRenew = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW];
+        policy.setRenewable(autoRenew.get<int>() > 0);
+    }
+
+    LOG(INFO) << "Parsed policy: " << policy.to_string();
+
+    return policy;
 }

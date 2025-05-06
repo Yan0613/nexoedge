@@ -67,6 +67,13 @@ public:
      **/
     Type getType() const;
 
+    /**
+     * Obtain the name of the type of the policy
+     *
+     * @return the name of the type of the policy
+     **/
+    std::string getTypeName() const;
+
     // start time
     /**
      * Set the start date of the policy (the start date is always rounded to 00:00:00UTC on the same day) 
