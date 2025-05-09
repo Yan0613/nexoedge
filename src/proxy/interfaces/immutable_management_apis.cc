@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
 
+#include <sstream>
+
 #include <nlohmann/json.hpp>
 
 #include "../../common/config.hh"
 
 #include "./immutable_management_apis.hh"
+#include "../../common/util.hh"
 
 // http server: https://live.boost.org/doc/libs/1_74_0/libs/beast/example/http/server/async/http_server_async.cpp
 // https server: https://live.boost.org/doc/libs/1_74_0/libs/beast/example/http/server/async-ssl/http_server_async_ssl.cpp
 
 // async model: https://www.open-std.org/jtc1/sc22/wg21/docs/papers/2013/n3747.pdf
+
+const char *RESPONSE_CONTENT_TYPE = "text/json";
 
 const char *ImmutableManagementApis::REQ_PATH_LOGIN = "/login";
 const char *ImmutableManagementApis::REQ_PATH_SET = "/set";
@@ -24,6 +29,12 @@ const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE = "type";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_START_DATE = "start_date";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION = "duration";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_AUTO_RENEW = "auto_renew";
+
+const char *ImmutableManagementApis::REP_BODY_KEY_RESULT = "result";
+const char *ImmutableManagementApis::REP_BODY_KEY_ERROR = "error";
+
+const char *ImmutableManagementApis::REP_BODY_VALUE_RESULT_OK = "success";
+const char *ImmutableManagementApis::REP_BODY_VALUE_RESULT_FAILED = "failed";
 
 using json = nlohmann::json;
 
@@ -67,49 +78,49 @@ ImmutableManagementApis::~ImmutableManagementApis() {
 
 bool ImmutableManagementApis::isLoginRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return method == http::verb::put && target == REQ_PATH_LOGIN;
 }
 
 bool ImmutableManagementApis::isPolicySetRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return method == http::verb::post && target == REQ_PATH_SET;
 }
 
 bool ImmutableManagementApis::isPolicyGetRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return method == http::verb::get && target == REQ_PATH_GET;
 }
 
 bool ImmutableManagementApis::isPolicyGetAllRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return method == http::verb::get && target == REQ_PATH_GETALL;
 }
 
 bool ImmutableManagementApis::isPolicyExtendRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return method == http::verb::post && target == REQ_PATH_EXTEND;
 }
 
 bool ImmutableManagementApis::isPolicyRenewRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return method == http::verb::post && target == REQ_PATH_RENEW;
 }
 
 bool ImmutableManagementApis::checkValidRequestPath(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return (
         false
@@ -121,7 +132,7 @@ bool ImmutableManagementApis::checkValidRequestPath(
 
 bool ImmutableManagementApis::isPolicyChangeRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return (
         false
@@ -133,7 +144,7 @@ bool ImmutableManagementApis::isPolicyChangeRequest(
 
 bool ImmutableManagementApis::isPolicyInquiryRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
 ) {
     return (
         false
@@ -195,11 +206,11 @@ template <class Body, class Allocator>
     http::response<http::string_body> ImmutableManagementApis::genGeneralResponse(
         http::request<Body, http::basic_fields<Allocator>>& req,
         const char *key,
-        beast::string_view value,
+        std::string_view value,
         http::status httpStatus
 ) {
     http::response<http::string_body> res{httpStatus, req.version()};
-    res.set(http::field::content_type, "text/json");
+    res.set(http::field::content_type, RESPONSE_CONTENT_TYPE);
     res.keep_alive(req.keep_alive());
     json bodyJson;
     bodyJson[key] = value;
@@ -215,7 +226,7 @@ template <class Body, class Allocator>
         http::status httpStatus
 ) {
     http::response<http::string_body> res{httpStatus, req.version()};
-    res.set(http::field::content_type, "text/json");
+    res.set(http::field::content_type, RESPONSE_CONTENT_TYPE);
     res.keep_alive(req.keep_alive());
     res.body() = bodyJson.dump();
     res.prepare_payload();
@@ -226,22 +237,22 @@ template <class Body, class Allocator>
     http::response<http::string_body> ImmutableManagementApis::genRequestSuccessResponse(
         http::request<Body, http::basic_fields<Allocator>>& req
 ) {
-    return genGeneralResponse(req, "result", "success", http::status::ok);
+    return genGeneralResponse(req, REP_BODY_KEY_RESULT, REP_BODY_VALUE_RESULT_OK, http::status::ok);
 }
 
 template <class Body, class Allocator>
     http::response<http::string_body> ImmutableManagementApis::genRequestFailedResponse(
         http::request<Body, http::basic_fields<Allocator>>& req
 ) {
-    return genGeneralResponse(req, "result", "failed", http::status::ok);
+    return genGeneralResponse(req, REP_BODY_KEY_RESULT, REP_BODY_VALUE_RESULT_FAILED, http::status::ok);
 }
 
 template <class Body, class Allocator>
     http::response<http::string_body> ImmutableManagementApis::genBadRequestResponse(
         http::request<Body, http::basic_fields<Allocator>>& req,
-        const beast::string_view why
+        const std::string_view why
 ) {
-    return genGeneralResponse(req, "error", why, http::status::bad_request);
+    return genGeneralResponse(req, REP_BODY_KEY_ERROR, why, http::status::bad_request);
 }
 
 template <class Body, class Allocator, class Send>
@@ -251,10 +262,16 @@ template <class Body, class Allocator, class Send>
         std::shared_ptr<ImmutableManager> immutableManager
 ) {
     const http::verb &method = req.method();
-    beast::string_view target = req.target();
+    std::string target(req.target().begin(), req.target().end());
+
+    size_t queryStartPos = target.find("?");
+    if (queryStartPos != std::string::npos) {
+        target = target.substr(0, queryStartPos);
+    }
+
 
     if (!checkValidRequestPath(method, target)) {
-        send(genBadRequestResponse(req, "Illegal request type/path."));
+        send(genBadRequestResponse(req, "Illegal request type/path. (1)"));
         return;
     }
 
@@ -268,7 +285,7 @@ template <class Body, class Allocator, class Send>
     } else if (isPolicyInquiryRequest(method, target)) {
         handlePolicyInquiry(req, send, immutableManager);
     } else {
-        send(genBadRequestResponse(req, "Illegal request type/path."));
+        send(genBadRequestResponse(req, "Illegal request type/path. (2)"));
     }
 }
 
@@ -288,7 +305,7 @@ bool ImmutableManagementApis::handlePolicyChange(
     std::shared_ptr<ImmutableManager> immutableManager
 ) {
     const http::verb &method = req.method();
-    beast::string_view target = req.target();
+    std::string target(req.target().begin(), req.target().end());
 
     // TODO: authenticate the request issuer
 
@@ -366,6 +383,7 @@ void ImmutableManagementApis::addPolicyToJson(const ImmutablePolicy &policy, jso
     json[REQ_BODY_SUBKEY_POLICY_AUTO_RENEW] = policy.isRenewable();
 }
 
+
 template <class Body, class Allocator, class Send> 
 bool ImmutableManagementApis::handlePolicyInquiry(
     http::request<Body, http::basic_fields<Allocator>>& req,
@@ -373,31 +391,39 @@ bool ImmutableManagementApis::handlePolicyInquiry(
     std::shared_ptr<ImmutableManager> immutableManager
 ) {
     const http::verb &method = req.method();
-    beast::string_view target = req.target();
+    std::string target(req.target().begin(), req.target().end());
+    std::string query, filename, policyType;
+
+    // extract the query input parameters
+    size_t queryStartPos = target.find("?");
+    if (queryStartPos != std::string::npos) {
+        query = target.substr(queryStartPos + 1);
+        target = target.substr(0, queryStartPos);
+
+        filename = getParameterValue(query, ImmutableManagementApis::REQ_BODY_KEY_FILENAME);
+        policyType = getParameterValue(query, ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE);
+    }
 
     // TODO: authenticate the request issuer
 
-    PolicyApiRequestBody body(static_cast<std::string_view>(req.body()));
-
     // check for the target file name (essential for all requests)
-    if (body.hasObjectName() == false) {
+    if (filename.empty()) {
         send(genBadRequestResponse(req, "Missing request parameter (file name)!"));
         return false;
     }
 
-
     // get the target file and policy to set/update
     File f;
-    std::string name = body.getObjectName();
-    f.setName(name.data(), name.size());
+    f.setName(filename.data(), filename.size());
 
     if (isPolicyGetRequest(method, target)) {
-        if (!body.hasPolicyType()) {
+        if (policyType.empty()) {
             send(genBadRequestResponse(req, "Missing request parameter (policy type)!"));
             return false;
         }
         // fetch the policy if any
-        ImmutablePolicy policy = body.getImmutablePolicy();
+        ImmutablePolicy policy;
+        policy.setType(policyType);
         bool policyExists = immutableManager->getPolicy(f, policy.getType(), policy);
         // send the response
         json res = json::object();
@@ -415,12 +441,29 @@ bool ImmutableManagementApis::handlePolicyInquiry(
             json item;
             addPolicyToJson(policies[i], item); 
             res.push_back(item);
-            LOG(INFO) << "policy [" << i << "] " << policies[i].to_string();
         }
         send(genGeneralResponse(req, res, http::status::ok));
         return true;
     }
     return false;
+}
+
+std::string ImmutableManagementApis::getParameterValue(
+    const std::string query,
+    std::string_view key
+) {
+    // find the key in the query string
+    std::string targetPrefix(key.begin());
+    targetPrefix.append("=");
+    size_t startPos = query.find(targetPrefix);
+    if (startPos == std::string::npos) {
+        // return an empty string if the parameter not found
+        return "";
+    }
+    startPos += targetPrefix.size();
+    // extract the value
+    size_t endPos = query.find("&", startPos);
+    return Util::urlDecode(query.substr(startPos, endPos == std::string::npos? endPos : endPos - startPos));
 }
 
 // ImmutableManagementApis;:Listener
@@ -480,7 +523,7 @@ void ImmutableManagementApis::Listener::onAccept(
         reportFailure(ec, "accept the client connection");
         return; // to avoid infinite loop
     } else {
-        DLOG(INFO) << "Creating a session now " << (_ctx? "with" : "without") << "SSL.";
+        DLOG(INFO) << "Creating a session now " << (_ctx? "with" : "without") << " SSL encryption.";
         // create the Session and run it
         std::make_shared<Session>(
             std::move(socket),
@@ -748,7 +791,7 @@ bool ImmutableManagementApis::PolicyApiRequestBody::hasPolicyAutoRenew() const {
         && _parsedJson.contains(REQ_BODY_KEY_POLICY)
         && _parsedJson[REQ_BODY_KEY_POLICY].is_object()
         && _parsedJson[REQ_BODY_KEY_POLICY].contains(REQ_BODY_SUBKEY_POLICY_AUTO_RENEW)
-        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_number_unsigned()
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_boolean()
     ;
 }
 
@@ -764,7 +807,7 @@ bool ImmutableManagementApis::PolicyApiRequestBody::hasFullPolicy() const {
         && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_TYPE].is_string()
         && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_START_DATE].is_string()
         && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_DURATION].is_number_unsigned()
-        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_number_unsigned()
+        && _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].is_boolean()
     ;
 }
 
@@ -800,10 +843,10 @@ ImmutablePolicy ImmutableManagementApis::PolicyApiRequestBody::getImmutablePolic
     // set policy auto renew
     if (hasPolicyAutoRenew()) {
         auto &autoRenew = _parsedJson[REQ_BODY_KEY_POLICY][REQ_BODY_SUBKEY_POLICY_AUTO_RENEW];
-        policy.setRenewable(autoRenew.get<int>() > 0);
+        policy.setRenewable(autoRenew.get<bool>());
     }
 
-    LOG(INFO) << "Parsed policy: " << policy.to_string();
+    //DLOG(INFO) << "Parsed policy: " << policy.to_string();
 
     return policy;
 }

@@ -4,6 +4,7 @@
 #define __IMMUTABLE_MGT_APIS_HH__
 
 #include <vector>
+#include <string>
 
 #include <boost/beast/core.hpp>
 #include <boost/beast/http.hpp>
@@ -28,6 +29,30 @@ public:
     ImmutableManagementApis(std::shared_ptr<ImmutableManager> immutableManager);
     ~ImmutableManagementApis();
 
+    static void addPolicyToJson(const ImmutablePolicy &policy, json &json);
+
+    // request path/target definitions
+    static const char *REQ_PATH_LOGIN;
+    static const char *REQ_PATH_SET;
+    static const char *REQ_PATH_EXTEND;
+    static const char *REQ_PATH_RENEW;
+    static const char *REQ_PATH_GET;
+    static const char *REQ_PATH_GETALL;
+
+    // request body key
+    static const char *REQ_BODY_KEY_FILENAME;
+    static const char *REQ_BODY_KEY_POLICY;
+    static const char *REQ_BODY_SUBKEY_POLICY_TYPE;
+    static const char *REQ_BODY_SUBKEY_POLICY_START_DATE;
+    static const char *REQ_BODY_SUBKEY_POLICY_DURATION;
+    static const char *REQ_BODY_SUBKEY_POLICY_AUTO_RENEW;
+
+    // response body key and values
+    static const char *REP_BODY_KEY_RESULT;
+    static const char *REP_BODY_KEY_ERROR;
+    static const char *REP_BODY_VALUE_RESULT_OK;
+    static const char *REP_BODY_VALUE_RESULT_FAILED;
+
 protected:
 
     // forward declaration
@@ -38,40 +63,40 @@ private:
 
     static bool isLoginRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool isPolicySetRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool isPolicyGetRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool isPolicyGetAllRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool isPolicyExtendRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool isPolicyRenewRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool checkValidRequestPath(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
 
     static bool isPolicyChangeRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
     static bool isPolicyInquiryRequest(
         const http::verb method,
-        const beast::string_view target
+        const std::string_view target
     );
 
     static void reportFailure(beast::error_code ec, char const *reason);
@@ -80,7 +105,7 @@ private:
     static http::response<http::string_body> genGeneralResponse(
         http::request<Body, http::basic_fields<Allocator>>& req,
         const char *key,
-        beast::string_view value,
+        std::string_view value,
         http::status httpStatus
     );
 
@@ -104,7 +129,7 @@ private:
     template <class Body, class Allocator>
     static http::response<http::string_body> genBadRequestResponse(
         http::request<Body, http::basic_fields<Allocator>>& req,
-            const beast::string_view why
+            const std::string_view why
     );
 
     template <class Body, class Allocator, class Send> 
@@ -135,23 +160,12 @@ private:
         std::shared_ptr<ImmutableManager> immutableManager
     );
 
+    static std::string getParameterValue(
+        std::string query,
+        std::string_view key
+    );
+
     bool loadServerCertificate(ssl::context &ctx) const;
-    static void addPolicyToJson(const ImmutablePolicy &policy, json &json);
-
-    // request path/target definitions
-    static const char *REQ_PATH_LOGIN;
-    static const char *REQ_PATH_SET;
-    static const char *REQ_PATH_EXTEND;
-    static const char *REQ_PATH_RENEW;
-    static const char *REQ_PATH_GET;
-    static const char *REQ_PATH_GETALL;
-
-    static const char *REQ_BODY_KEY_FILENAME;
-    static const char *REQ_BODY_KEY_POLICY;
-    static const char *REQ_BODY_SUBKEY_POLICY_TYPE;
-    static const char *REQ_BODY_SUBKEY_POLICY_START_DATE;
-    static const char *REQ_BODY_SUBKEY_POLICY_DURATION;
-    static const char *REQ_BODY_SUBKEY_POLICY_AUTO_RENEW;
 
     // server listening and worker threads
     const int MAX_SERVER_THREADS = 1024;

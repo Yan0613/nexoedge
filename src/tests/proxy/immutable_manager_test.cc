@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#include <vector>
 #include <map>
+#include <vector>
+#include <string>
+
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
 
 #include "../../common/config.hh"
 
@@ -13,7 +17,12 @@
 #include "../../proxy/immutable/immutable_policy_store.hh"
 #include "../../proxy/immutable/immutable_policy_store_redis.hh"
 
+#include "../../proxy/interfaces/immutable_management_apis.hh"
+
+#include "../../common/util.hh"
+
 using ImmutablePolicyStoreActionResult = ImmutablePolicyStore::ActionResult;
+using json = nlohmann::json;
 
 Proxy *proxy = nullptr;
 DeduplicationModule *dedup = nullptr;
@@ -23,12 +32,16 @@ std::map<int, std::string> agentMap; // container to agent map
 BgChunkHandler::TaskQueue taskQueue; // background chunk task queue
 
 ImmutablePolicyStore *store = nullptr;
-const char *testFileName = "test_file.txt";
+const char *testFileName = "test file.txt";
+const char *testNonExistFileName = "test_non_exits_file.txt";
 const char *testDstFileName = "test_file_dst.txt";
+
+std::string apiResponse;
 
 int numFailed = 0;
 int numRan = 0;
 bool failedSome = false;
+bool testViaApis = false;
 
 enum {
     WRITE,
@@ -47,7 +60,7 @@ enum {
 void setDefaultTestFile(File &f) {
     f.setName(testFileName, strlen(testFileName));
     //f.setVersion(0);
-    f.namespaceId = 123;
+    f.namespaceId = Config::getInstance().getProxyNamespaceId();
     f.offset = 0;
     f.size = 0;
     f.length = 0;
@@ -56,16 +69,16 @@ void setDefaultTestFile(File &f) {
 void setNewDstDefaultTestFile(File &f) {
     f.setName(testDstFileName, strlen(testDstFileName));
     //f.setVersion(0);
-    f.namespaceId = 123;
+    f.namespaceId = Config::getInstance().getProxyNamespaceId();
     f.offset = 0;
     f.size = 0;
     f.length = 0;
 }
 
 void setNonExistFile(File &f) {
-    f.setName(testFileName, strlen(testFileName));
+    f.setName(testNonExistFileName, strlen(testNonExistFileName));
     f.setVersion(0);
-    f.namespaceId = 3;
+    f.namespaceId = Config::getInstance().getProxyNamespaceId();
 }
 
 void setDefaultPolicy(
@@ -93,7 +106,7 @@ void initProxy() {
 
     dedup = new DedupNone();
     proxy = new Proxy(coordinator, &agentMap, &taskQueue, dedup);
-    printf("Started the proxy. %p\n", proxy);
+    //printf("Started the proxy. %p\n", proxy);
 }
 
 bool uploadAnEmptyFile(bool expectedResult = true) {
@@ -115,6 +128,108 @@ void shutdownProxy() {
     proxy = nullptr;
     coordinator = nullptr;
     dedup = nullptr;
+}
+
+//===================//
+// curl client setup //
+//===================//
+
+size_t receiveApiResponse(char *incomingData, size_t size, size_t nmemb, void *userdata) {
+    apiResponse.append(incomingData, size * nmemb);
+    return size * nmemb;
+}
+
+long sendPostRequest(std::string path, std::string reqBody) {
+    apiResponse.clear();
+
+    long responseCode = 400;
+    CURL *curlCli = curl_easy_init();
+    if (curlCli) {
+        std::string endpoint = "http://localhost:59003" + path;
+        if (
+            curl_easy_setopt(curlCli, CURLOPT_URL, endpoint.c_str()) == CURLE_OK // set the API endpoint and path
+            && curl_easy_setopt(curlCli, CURLOPT_POST, 1) == CURLE_OK // use POST
+            && curl_easy_setopt(curlCli, CURLOPT_POSTFIELDS, reqBody.c_str()) == CURLE_OK // set the request body
+            && curl_easy_setopt(curlCli, CURLOPT_POSTFIELDSIZE, reqBody.size()) == CURLE_OK // set the request body length
+            && curl_easy_setopt(curlCli, CURLOPT_WRITEFUNCTION, receiveApiResponse) == CURLE_OK // set the response retrieval function
+            && curl_easy_perform(curlCli) == CURLE_OK // issue the request
+        ) {
+            curl_easy_getinfo(curlCli, CURLINFO_RESPONSE_CODE, &responseCode);
+        }
+        curl_easy_cleanup(curlCli); // clean up
+    }
+    return responseCode;
+}
+
+long sendGetRequest(std::string path, std::string reqBody) {
+    apiResponse.clear();
+
+    long responseCode = 400;
+    CURL *curlCli = curl_easy_init();
+    if (curlCli) {
+        std::string endpoint = "http://localhost:59003" + path + "?" + reqBody;
+        if (
+            curl_easy_setopt(curlCli, CURLOPT_URL, endpoint.c_str()) == CURLE_OK // set the API endpoint and path
+            && curl_easy_setopt(curlCli, CURLOPT_WRITEFUNCTION, receiveApiResponse) == CURLE_OK // set the response retrieval function
+            && curl_easy_setopt(curlCli, CURLOPT_HTTPGET, 1) == CURLE_OK // use POST
+            && curl_easy_perform(curlCli) == CURLE_OK // issue the request
+        ) {
+            curl_easy_getinfo(curlCli, CURLINFO_RESPONSE_CODE, &responseCode);
+        }
+        curl_easy_cleanup(curlCli); // clean up
+    }
+    return responseCode;
+}
+
+bool extractPolicyFromResponse(ImmutablePolicy &p) {
+    try {
+        json resBodyJson = json::parse(apiResponse);
+        if (
+            resBodyJson.contains(ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE) 
+            && resBodyJson.contains(ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_START_DATE)
+            && resBodyJson.contains(ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION)
+            && resBodyJson.contains(ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_AUTO_RENEW)
+        ) {
+            p.setStartDate(resBodyJson[ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_START_DATE].get<std::string>());
+            p.setType(resBodyJson[ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE].get<std::string>());
+            p.setDuration(resBodyJson[ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION].get<int>());
+            p.setRenewable(resBodyJson[ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_AUTO_RENEW].get<int>());
+            return true;
+        }
+    } catch (std::exception &e) {
+    }
+    return false;
+}
+
+bool extractResultFromResponse(std::string &result) {
+    try {
+        json resBodyJson = json::parse(apiResponse);
+        if (resBodyJson.contains(ImmutableManagementApis::REP_BODY_KEY_RESULT)) {
+            result = resBodyJson[ImmutableManagementApis::REP_BODY_KEY_RESULT].get<std::string>();
+            return true;
+        }
+    } catch (std::exception &e) {
+    }
+    return false;
+}
+
+long sendPolicyGetRequest(const std::string &name, const std::string &policyType) {
+    std::string query;
+    query.append(ImmutableManagementApis::REQ_BODY_KEY_FILENAME).append("=").append(Util::urlEncode(name));
+    query.append("&").append(ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE).append("=").append(Util::urlEncode(policyType));
+    //printf("< GET REQ: %s>\n", query.c_str());
+    return sendGetRequest(ImmutableManagementApis::REQ_PATH_GET, query);
+}
+
+long sendPolicyChangeRequest(const std::string &name, const ImmutablePolicy &policy, const char *path) {
+    json reqBodyJson, policyJson;
+    ImmutableManagementApis::addPolicyToJson(policy, policyJson);
+    // set the file name and policy in the request body
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_POLICY] = policyJson;
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_FILENAME] = name;
+    // send the request to the API
+    //printf("< %s REQ: %s>\n", path, reqBodyJson.dump().c_str());
+    return sendPostRequest(path, reqBodyJson.dump());
 }
 
 //==========//
@@ -149,15 +264,38 @@ bool testPolicySet(time_t startTime = 0, bool autoRenew = false, bool expectSetT
     printf("[Policy to set] %s\n", p.to_string().c_str());
 
     // set the policy on a file
-    ImmutablePolicyStoreActionResult result = store->setPolicyOnFile(f, p);
-    if (result.success() != expectSetToSucceed) {
+    ImmutablePolicyStoreActionResult result;
+    json reqBodyJson, policyJson, resBodyJson;
+    bool okay = false;
+
+    if (!testViaApis) {
+        result = store->setPolicyOnFile(f, p);
+        okay = result.success() == expectSetToSucceed;
+    } else {
+        // send the request to the API
+        long response = sendPolicyChangeRequest(std::string(f.name, f.nameLength), p, ImmutableManagementApis::REQ_PATH_SET);
+        std::string result;
+        // check the response
+        //printf("< SET REP: %s>\n", apiResponse.c_str());
+        okay = response == 200
+            && extractResultFromResponse(result)
+            && result.compare(expectSetToSucceed? ImmutableManagementApis::REP_BODY_VALUE_RESULT_OK :ImmutableManagementApis::REP_BODY_VALUE_RESULT_FAILED) == 0;
+    }
+    if (!okay) {
         printf("> Failed to set a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
 
     // get the policy on a file
-    result = store->getPolicyOnFile(f, p.getType(), rp);
-    if (result.success() != expectGetToSucceed) {
+    if (!testViaApis) {
+        result = store->getPolicyOnFile(f, p.getType(), rp);
+        okay = result.success() == expectGetToSucceed;
+    } else {
+        long response = sendPolicyGetRequest(f.name, p.getTypeName());
+        okay = !expectGetToSucceed || (response == 200 && extractPolicyFromResponse(rp));
+        //printf("< GET REP: %s>\n", apiResponse.c_str());
+    }
+    if (!okay) {
         printf("> Failed to get a policy on a file after setting! %s\n", result._errorMsg.c_str());
         return false;
     }
@@ -182,9 +320,21 @@ bool testNonExistPolicyGet() {
     File f;
     setNonExistFile(f);
 
+    // try obtaining a non-existing policy - should fail
+    bool okay = false;
     ImmutablePolicy rp;
-    ImmutablePolicyStoreActionResult result = store->getPolicyOnFile(f, ImmutablePolicy::Type::IMMUTABLE, rp);
-    if (result.success()) {
+    ImmutablePolicyStoreActionResult result;
+    if (!testViaApis) {
+        result = store->getPolicyOnFile(f, ImmutablePolicy::Type::IMMUTABLE, rp);
+        okay = result.success();
+    } else {
+        long response = sendPolicyGetRequest(f.name, ImmutablePolicy::TypeString[ImmutablePolicy::Type::IMMUTABLE]);
+        okay = response == 200 && extractPolicyFromResponse(rp);
+        //printf("< GET REP: %s>\n", apiResponse.c_str());
+    }
+
+    // check if the operation really failed
+    if (okay) {
         printf("> Get a successful result for an non-existing policy on a file!\n");
         return false;
     }
@@ -206,17 +356,41 @@ bool testPolicyExtend(int delta = 1, bool expectToSucceed = true) {
     setDefaultPolicy(p);
     p.setDuration(p.getDuration() + delta);
 
-    ImmutablePolicyStoreActionResult result = store->extendPolicyOnFile(f, p);
+    json reqBodyJson, policyJson, resBodyJson;
+    bool okay = false;
+    ImmutablePolicyStoreActionResult result;
+
+    if (!testViaApis) {
+        result = store->extendPolicyOnFile(f, p);
+        okay = result.success() == expectToSucceed;
+    } else {
+        // send the request to the API
+        long response = sendPolicyChangeRequest(std::string(f.name, f.nameLength), p, ImmutableManagementApis::REQ_PATH_EXTEND);
+        std::string resMsg;
+        // check the response
+        //printf("< EXTEND REP: %s>\n", apiResponse.c_str());
+        okay = response == 200
+            && extractResultFromResponse(resMsg)
+            && resMsg.compare(expectToSucceed? ImmutableManagementApis::REP_BODY_VALUE_RESULT_OK :ImmutableManagementApis::REP_BODY_VALUE_RESULT_FAILED) == 0;
+    }
 
     // check if the expected result is there
-    if (result.success() != expectToSucceed) {
+    if (!okay) {
         printf("> Failed to extend a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
 
     // get the policy on a file
-    result = store->getPolicyOnFile(f, p.getType(), rp);
-    if (!result.success()) {
+    if (!testViaApis) {
+        result = store->getPolicyOnFile(f, p.getType(), rp);
+        okay = result.success();
+    } else {
+        long response = sendPolicyGetRequest(f.name, p.getTypeName());
+        okay = !expectToSucceed || (response == 200 && extractPolicyFromResponse(rp));
+        //printf("< GET REP: %s>\n", apiResponse.c_str());
+    }
+
+    if (!okay) {
         printf("> Failed to get a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
@@ -245,17 +419,38 @@ bool testNonExistPolicyExtend() {
     setDefaultPolicy(p);
     p.setDuration(p.getDuration() + 1);
 
+    bool okay = false;
+
     printf("[Policy extension to] %s\n", p.to_string().c_str());
 
-    ImmutablePolicyStoreActionResult result = store->extendPolicyOnFile(f, p);
+    ImmutablePolicyStoreActionResult result;
+    if (!testViaApis) {
+        result = store->extendPolicyOnFile(f, p);
+        okay = result.success() == false;
+    } else {
+        // send the request to the API
+        long response = sendPolicyChangeRequest(std::string(f.name, f.nameLength), p, ImmutableManagementApis::REQ_PATH_EXTEND);
+        std::string resMsg;
+        // check the response
+        //printf("< EXTEND REP: %s>\n", apiResponse.c_str());
+        okay = response == 200
+            && extractResultFromResponse(resMsg)
+            && resMsg.compare(ImmutableManagementApis::REP_BODY_VALUE_RESULT_FAILED) == 0;
+    }
 
     // check if the expected result is there
-    if (result.success() != false) {
+    if (!okay) {
         printf("> Got a success for extend a non-existing policy on a file!\n");
         return false;
     }
 
-    result = store->getPolicyOnFile(f, p.getType(), rp);
+    if (!testViaApis) {
+        result = store->getPolicyOnFile(f, p.getType(), rp);
+    } else {
+        sendPolicyGetRequest(f.name, p.getTypeName());
+        extractPolicyFromResponse(rp);
+    }
+
     printf("[Policy in store] %s\n", rp.to_string().c_str());
 
     printf("> Passed the non-existing policy extension test.\n");
@@ -275,18 +470,38 @@ bool testPolicyRenewable(bool enable, time_t startTime = 0, bool expectToSucceed
     setDefaultPolicy(p);
     p.setStartDate(startTime);
     p.setRenewable(enable);
+    rp.setRenewable(!enable);
 
     ImmutablePolicyStoreActionResult result;
     time_t timeNow;
     time(&timeNow);
-    result = store->renewPolicyOnFile(f, p.getType(), enable);
 
-    if (result.success() != expectToSucceed) {
+    bool okay = false;
+
+    if (!testViaApis) {
+        result = store->renewPolicyOnFile(f, p.getType(), enable);
+        okay = result.success() == expectToSucceed;
+    } else {
+        long response = sendPolicyChangeRequest(std::string(f.name, f.nameLength), p, ImmutableManagementApis::REQ_PATH_RENEW);
+        std::string resMsg;
+        // check the response
+        //printf("< RENEW REP: %s>\n", apiResponse.c_str());
+        okay = response == 200
+            && extractResultFromResponse(resMsg)
+            && resMsg.compare(expectToSucceed? ImmutableManagementApis::REP_BODY_VALUE_RESULT_OK : ImmutableManagementApis::REP_BODY_VALUE_RESULT_FAILED) == 0;
+    }
+
+    if (!okay) {
         printf("> Failed to update a policy on a file! %s\n", result._errorMsg.c_str());
         return false;
     }
 
-    result = store->getPolicyOnFile(f, p.getType(), rp);
+    if (!testViaApis) {
+        result = store->getPolicyOnFile(f, p.getType(), rp);
+    } else {
+        sendPolicyGetRequest(f.name, p.getTypeName());
+        extractPolicyFromResponse(rp);
+    }
 
     if (p.isRenewable() != rp.isRenewable() && expectToSucceed) {
         printf("> Failed to get the expected auto renew state of the policy!\n");
@@ -644,18 +859,16 @@ void policyStoreTests() {
     numFailed += !testPolicyRenewable(/* set to auto renew */ false);
 
     // test policy migration - should success
-    numFailed += !testPolicyMove();
+    if (!testViaApis) {
+        numFailed += !testPolicyMove();
+    }
 
-    printf(">> Passed %d of %d tests on policy store. <<\n", numRan - numFailed, numRan);
+    printf(">> Passed %d of %d tests on policy store %s. <<\n", numRan - numFailed, numRan, (testViaApis? "via APIs" : "via direct calls"));
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
 }
 
 void policyEnforcementTests() {
-
-    // init a proxy
-    initProxy();
-
     // no policy
     numFailed += !testEnforcementFileNoPolicy();
 
@@ -674,8 +887,6 @@ void policyEnforcementTests() {
     printf(">> Passed %d of %d tests on policy enforcement. <<\n", numRan - numFailed, numRan);
     failedSome = failedSome || numFailed > 0;
     numFailed = 0; numRan = 0;
-
-    shutdownProxy();
 }
 
 
@@ -708,24 +919,42 @@ int main (int argc, char **argv) {
     // policy state
     policyStateTests();
 
+
     // init the policy store
     store = new ImmutableRedisPolicyStore();
+
+    // init a proxy
+    initProxy();
 
     // reset the test state by removing all policies 
     cleanup();
 
-    // policy management
+    // policy management (direct calls)
+    testViaApis = false;
     policyStoreTests();
     cleanup();
-    assert(!failedSome);
+    if (failedSome) { goto cleanup; }
+
+    // policy management (API calls)
+    testViaApis = true;
+    policyStoreTests();
+    cleanup();
+    if (failedSome) { goto cleanup; }
 
     // policy enforcement
     policyEnforcementTests();
     cleanup();
-    assert(!failedSome);
+    if (failedSome) { goto cleanup; }
 
+    printf(">>> Passed all tests! <<<\n");
+
+cleanup:
+
+    shutdownProxy();
     delete store;
     store = nullptr;
+
+    assert(!failedSome);
 
     return 0;
 }

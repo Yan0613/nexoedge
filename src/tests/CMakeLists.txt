@@ -47,7 +47,7 @@ target_link_libraries( metastore_test ncloud_metastore glog )
 ####################
 add_executable( immutable_policy_test EXCLUDE_FROM_ALL proxy/immutable_manager_test.cc )
 add_dependencies( immutable_policy_test google-log )
-target_link_libraries( immutable_policy_test ncloud_immutability ncloud_proxy glog )
+target_link_libraries( immutable_policy_test ncloud_immutability ncloud_proxy glog curl )
 
 #######################
 # Collection of tests #

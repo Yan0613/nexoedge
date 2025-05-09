@@ -351,7 +351,7 @@ ActionResult ImmutableRedisPolicyStore::renewPolicyOnFile(const File &f, const I
         // the policy extension failed
         result._success = false;
         result._errorMsg
-                .append("Failed to update the auto renew status fo the ")
+                .append("Failed to update the auto renew status of the ")
                 .append(ImmutablePolicy::TypeString[type])
                 .append(" policy of file ")
                 .append(f.name)
