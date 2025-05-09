@@ -4,6 +4,10 @@
 
 #include <nlohmann/json.hpp>
 
+#define JWT_DISABLE_PICOJSON
+#undef  JWT_DISABLE_BASE64
+#include <jwt-cpp/traits/nlohmann-json/defaults.h>
+
 #include "../../common/config.hh"
 
 #include "./immutable_management_apis.hh"
@@ -23,6 +27,9 @@ const char *ImmutableManagementApis::REQ_PATH_RENEW = "/renew";
 const char *ImmutableManagementApis::REQ_PATH_GET = "/get";
 const char *ImmutableManagementApis::REQ_PATH_GETALL = "/getall";
 
+const char *ImmutableManagementApis::REQ_HEADER_TOKEN = "token";
+const char *ImmutableManagementApis::REQ_HEADER_USER = "user";
+
 const char *ImmutableManagementApis::REQ_BODY_KEY_FILENAME = "name";
 const char *ImmutableManagementApis::REQ_BODY_KEY_POLICY = "policy";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE = "type";
@@ -36,7 +43,14 @@ const char *ImmutableManagementApis::REP_BODY_KEY_ERROR = "error";
 const char *ImmutableManagementApis::REP_BODY_VALUE_RESULT_OK = "success";
 const char *ImmutableManagementApis::REP_BODY_VALUE_RESULT_FAILED = "failed";
 
+const char *ImmutableManagementApis::AuthTokenGenerator::CLAIM_KEY_USER = "user";
+const char *ImmutableManagementApis::AuthTokenGenerator::TOKEN_TYPE = "JWT";
+const char *ImmutableManagementApis::AuthTokenGenerator::TOKEN_ISSUER = "nexoedge";
+const char *ImmutableManagementApis::AuthTokenGenerator::TOKEN_ID = "immutableMgtApi";
+
 using json = nlohmann::json;
+
+using traits = jwt::traits::nlohmann_json;
 
 ImmutableManagementApis::ImmutableManagementApis(
         std::shared_ptr<ImmutableManager> immutableManager
@@ -54,12 +68,17 @@ ImmutableManagementApis::ImmutableManagementApis(
     std::shared_ptr<ssl::context> sslCtx = std::make_shared<ssl::context>(ssl::context::tlsv12);
     bool sslSet = loadServerCertificate(*sslCtx);
 
+    // initialize the token generator
+    // TODO replace the key with a user input key
+    _tokenGenerator = std::make_shared<AuthTokenGenerator>("secret_key");
+
     // listen to incoming requests
     _serverThread = std::make_shared<Listener>(
         _httpServerWorkerCxtPool,
         sslSet? sslCtx: nullptr,
         tcp::endpoint{address, port},
-        _immutableManager
+        _immutableManager,
+        _tokenGenerator
     );
     _serverThread->run();
 
@@ -80,7 +99,7 @@ bool ImmutableManagementApis::isLoginRequest(
         const http::verb method,
         const std::string_view target
 ) {
-    return method == http::verb::put && target == REQ_PATH_LOGIN;
+    return method == http::verb::post && target == REQ_PATH_LOGIN;
 }
 
 bool ImmutableManagementApis::isPolicySetRequest(
@@ -203,6 +222,16 @@ bool ImmutableManagementApis::loadServerCertificate(ssl::context &ctx) const {
 }
 
 template <class Body, class Allocator>
+    http::response<http::string_body> ImmutableManagementApis::genEmptyBodyResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req,
+        http::status httpStatus
+) {
+    http::response<http::string_body> res{httpStatus, req.version()};
+    res.prepare_payload();
+    return res;
+}
+
+template <class Body, class Allocator>
     http::response<http::string_body> ImmutableManagementApis::genGeneralResponse(
         http::request<Body, http::basic_fields<Allocator>>& req,
         const char *key,
@@ -255,21 +284,47 @@ template <class Body, class Allocator>
     return genGeneralResponse(req, REP_BODY_KEY_ERROR, why, http::status::bad_request);
 }
 
+template <class Body, class Allocator>
+    http::response<http::string_body> ImmutableManagementApis::genUnathorizedRequestResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req
+) {
+    return genEmptyBodyResponse(req, http::status::unauthorized);
+}
+
+template <class Body, class Allocator, class Send> 
+bool ImmutableManagementApis::authenticateUser(
+    http::request<Body, http::basic_fields<Allocator>>& req,
+    Send &&send,
+    std::shared_ptr<AuthTokenGenerator> tokenGenerator 
+) {
+    // verify the provided token against the provided user
+    std::string token (req[REQ_HEADER_TOKEN].begin(), req[REQ_HEADER_TOKEN].end());
+    std::string user (req[REQ_HEADER_USER].begin(), req[REQ_HEADER_USER].end());
+    //LOG(INFO) << "Got token " << token; 
+    if (tokenGenerator->verifyToken(token, user) == false) {
+        send(genUnathorizedRequestResponse(req));
+        return false;
+    }
+    return true;
+}
+
 template <class Body, class Allocator, class Send>
     void ImmutableManagementApis::handleNewRequest(
         http::request<Body, http::basic_fields<Allocator>>&& req,
         Send &&send,
-        std::shared_ptr<ImmutableManager> immutableManager
+        std::shared_ptr<ImmutableManager> immutableManager,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator
 ) {
     const http::verb &method = req.method();
     std::string target(req.target().begin(), req.target().end());
 
+    // trim the query parameters in the target
     size_t queryStartPos = target.find("?");
     if (queryStartPos != std::string::npos) {
         target = target.substr(0, queryStartPos);
     }
 
-
+    // check if the requested path is valid
     if (!checkValidRequestPath(method, target)) {
         send(genBadRequestResponse(req, "Illegal request type/path. (1)"));
         return;
@@ -279,11 +334,11 @@ template <class Body, class Allocator, class Send>
 
     // handle the requests
     if (isLoginRequest(method, target)) {
-        handleLogin(req, send, immutableManager);
+        handleLogin(req, send, immutableManager, tokenGenerator);
     } else if (isPolicyChangeRequest(method, target)) {
-        handlePolicyChange(req, send, immutableManager);
+        handlePolicyChange(req, send, immutableManager, tokenGenerator);
     } else if (isPolicyInquiryRequest(method, target)) {
-        handlePolicyInquiry(req, send, immutableManager);
+        handlePolicyInquiry(req, send, immutableManager, tokenGenerator);
     } else {
         send(genBadRequestResponse(req, "Illegal request type/path. (2)"));
     }
@@ -293,21 +348,33 @@ template <class Body, class Allocator, class Send>
 bool ImmutableManagementApis::handleLogin(
     http::request<Body, http::basic_fields<Allocator>>& req,
     Send &&send,
-    std::shared_ptr<ImmutableManager> immutableManager
+    std::shared_ptr<ImmutableManager> immutableManager,
+    std::shared_ptr<AuthTokenGenerator> tokenGenerator 
 ) {
-    return false;
+    // TODO validate the user credentials
+    std::string user = "admin", password;
+
+    // return a token upon successful login
+    json res;
+    res[REQ_HEADER_TOKEN] = tokenGenerator->newToken(user);
+    send(genGeneralResponse(req, res.dump(), http::status::ok));
+    return true;
 }
 
 template <class Body, class Allocator, class Send> 
 bool ImmutableManagementApis::handlePolicyChange(
     http::request<Body, http::basic_fields<Allocator>>& req,
     Send &&send,
-    std::shared_ptr<ImmutableManager> immutableManager
+    std::shared_ptr<ImmutableManager> immutableManager,
+    std::shared_ptr<AuthTokenGenerator> tokenGenerator 
 ) {
     const http::verb &method = req.method();
     std::string target(req.target().begin(), req.target().end());
 
-    // TODO: authenticate the request issuer
+    // authenticate the request issuer
+    if (!authenticateUser(req, send, tokenGenerator)) {
+        return false;
+    }
 
     PolicyApiRequestBody body(static_cast<std::string_view>(req.body()));
 
@@ -388,8 +455,14 @@ template <class Body, class Allocator, class Send>
 bool ImmutableManagementApis::handlePolicyInquiry(
     http::request<Body, http::basic_fields<Allocator>>& req,
     Send &&send,
-    std::shared_ptr<ImmutableManager> immutableManager
+    std::shared_ptr<ImmutableManager> immutableManager,
+    std::shared_ptr<AuthTokenGenerator> tokenGenerator 
 ) {
+    // authenticate the request issuer
+    if (!authenticateUser(req, send, tokenGenerator)) {
+        return false;
+    }
+
     const http::verb &method = req.method();
     std::string target(req.target().begin(), req.target().end());
     std::string query, filename, policyType;
@@ -403,8 +476,6 @@ bool ImmutableManagementApis::handlePolicyInquiry(
         filename = getParameterValue(query, ImmutableManagementApis::REQ_BODY_KEY_FILENAME);
         policyType = getParameterValue(query, ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE);
     }
-
-    // TODO: authenticate the request issuer
 
     // check for the target file name (essential for all requests)
     if (filename.empty()) {
@@ -472,8 +543,9 @@ ImmutableManagementApis::Listener::Listener(
         net::io_context &ioc,
         std::shared_ptr<ssl::context> ctx,
         tcp::endpoint endpoint,
-        std::shared_ptr<ImmutableManager> immutableManager
-) : _ioc(ioc) , _ctx(ctx) , _acceptor(ioc), _immutableManager(immutableManager) {
+        std::shared_ptr<ImmutableManager> immutableManager,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator
+) : _ioc(ioc) , _ctx(ctx) , _acceptor(ioc), _immutableManager(immutableManager), _tokenGenerator(tokenGenerator) {
     beast::error_code ec;
 
     // open the acceptor
@@ -528,7 +600,8 @@ void ImmutableManagementApis::Listener::onAccept(
         std::make_shared<Session>(
             std::move(socket),
             _ctx,
-            _immutableManager
+            _immutableManager,
+            _tokenGenerator
         )->run();
     }
 
@@ -583,8 +656,9 @@ ImmutableManagementApis::Session::SendLambda::operator() (
 ImmutableManagementApis::Session::Session(
     tcp::socket&& socket,
     std::shared_ptr<ssl::context> ctx,
-    std::shared_ptr<ImmutableManager> immutableManager
-) : _sslCtx(ctx), _lambda(*this), _immutableManager(immutableManager)
+    std::shared_ptr<ImmutableManager> immutableManager,
+    std::shared_ptr<AuthTokenGenerator> tokenGenerator
+) : _sslCtx(ctx), _lambda(*this), _immutableManager(immutableManager), _tokenGenerator(tokenGenerator)
 {
     if (_sslCtx) {
         _sslStream = new net::ssl::stream<beast::tcp_stream>(std::move(socket), *_sslCtx);
@@ -689,7 +763,7 @@ void ImmutableManagementApis::Session::onRead(
     }
 
     // send the response
-    handleNewRequest(std::move(_req), _lambda, _immutableManager);
+    handleNewRequest(std::move(_req), _lambda, _immutableManager, _tokenGenerator);
 }
 
 void ImmutableManagementApis::Session::onWrite(
@@ -849,4 +923,77 @@ ImmutablePolicy ImmutableManagementApis::PolicyApiRequestBody::getImmutablePolic
     //DLOG(INFO) << "Parsed policy: " << policy.to_string();
 
     return policy;
+}
+
+ImmutableManagementApis::AuthTokenGenerator::AuthTokenGenerator(
+        const std::string privateKey,
+        const std::string publicKey
+) : _privateKey(privateKey), _publicKey(publicKey), _asymmeticSign(true) {
+}
+
+ImmutableManagementApis::AuthTokenGenerator::AuthTokenGenerator(
+        const std::string key
+) : _privateKey(key), _publicKey(""), _asymmeticSign(false) {
+}
+
+ImmutableManagementApis::AuthTokenGenerator::~AuthTokenGenerator() {
+}
+
+std::string ImmutableManagementApis::AuthTokenGenerator::newToken(
+        const std::string &user
+) const {
+    return newToken(_privateKey, user, _asymmeticSign);
+}
+
+std::string ImmutableManagementApis::AuthTokenGenerator::newToken(
+        const std::string &privateKey,
+        const std::string &user,
+        bool asymmetricSign
+) {
+
+    // generate a token which expires after an hour
+    auto token = jwt::create()
+            .set_type(TOKEN_TYPE)
+            .set_issuer(TOKEN_ISSUER)
+            .set_id(TOKEN_ID)
+            .set_issued_now()
+            .set_expires_in(std::chrono::seconds{HOUR_IN_SECONDS})
+            .set_payload_claim(CLAIM_KEY_USER, jwt::claim(user));
+    if (asymmetricSign) {
+            return token.sign(jwt::algorithm::rs256("", privateKey, "", ""));
+    }
+    return token.sign(jwt::algorithm::hs256(privateKey));
+}
+
+bool ImmutableManagementApis::AuthTokenGenerator::verifyToken(
+        const std::string &token,
+        const std::string &expectedUser
+) {
+    return verifyToken(token, _asymmeticSign? _publicKey : _privateKey, expectedUser, _asymmeticSign);
+}
+
+bool ImmutableManagementApis::AuthTokenGenerator::verifyToken(
+        const std::string &token,
+        const std::string &key,
+        const std::string &expectedUser,
+        bool asymmetricSign
+) {
+    try {
+        // decode the base64 token
+        const auto decoded = jwt::decode(token);
+        // verify the signature for the expected user claim and expiration date
+        auto verifier = jwt::verify()
+            .with_issuer(TOKEN_ISSUER)
+            .with_claim(CLAIM_KEY_USER, jwt::claim(expectedUser));
+        if (asymmetricSign) {
+            verifier.allow_algorithm(jwt::algorithm::rs256(key, "", "", ""));
+        } else {
+            verifier.allow_algorithm(jwt::algorithm::hs256(key));
+        }
+        verifier.verify(decoded);
+    } catch (std::exception &e) {
+        LOG(INFO) << "Failed to verify the token for user " << expectedUser << ", " << e.what() << ".";
+        return false;
+    }
+    return true;
 }

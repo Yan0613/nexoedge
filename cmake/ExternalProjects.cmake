@@ -91,6 +91,21 @@ ExternalProject_Add (
         -DCMAKE_BUILD_TYPE=Release
 )
 
+## jwt-cpp
+ExternalProject_Add (
+    "jwt-cpp"
+    PREFIX "third-party/jwt-cpp"
+    EXCLUDE_FROM_ALL true
+    URL ${PROJECT_THIRD_PARTY_LIB_DIR}/jwt-cpp-0.7.1.tar.gz
+    URL_MD5 8c9e424372d27f45a45bf3bd20e890a0
+    CMAKE_ARGS -DCMAKE_INSTALL_PREFIX=${PROJECT_BINARY_DIR}
+        -DCMAKE_CXX_STANDARD=17
+        -DCMAKE_CXX_FLAGS=-I${THIRD_PARTY_INCLUDE_CONFIG}
+        -DCMAKE_PREFIX_PATH=${PROJECT_BINARY_DIR}
+        -DJWT_BUILD_EXAMPLES=OFF
+        -DJWT_DISABLE_PICOJSON=ON
+)
+
 ## aliyun object storage sdk
 ExternalProject_Add (
     "mxml-lib"

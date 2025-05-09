@@ -39,7 +39,11 @@ public:
     static const char *REQ_PATH_GET;
     static const char *REQ_PATH_GETALL;
 
-    // request body key
+    // request header keys
+    static const char *REQ_HEADER_TOKEN;
+    static const char *REQ_HEADER_USER;
+
+    // request body keys
     static const char *REQ_BODY_KEY_FILENAME;
     static const char *REQ_BODY_KEY_POLICY;
     static const char *REQ_BODY_SUBKEY_POLICY_TYPE;
@@ -47,17 +51,19 @@ public:
     static const char *REQ_BODY_SUBKEY_POLICY_DURATION;
     static const char *REQ_BODY_SUBKEY_POLICY_AUTO_RENEW;
 
-    // response body key and values
+    // response body keys and values
     static const char *REP_BODY_KEY_RESULT;
     static const char *REP_BODY_KEY_ERROR;
     static const char *REP_BODY_VALUE_RESULT_OK;
     static const char *REP_BODY_VALUE_RESULT_FAILED;
+
 
 protected:
 
     // forward declaration
     class Session;
     class Listener;
+    class AuthTokenGenerator;
 
 private:
 
@@ -94,12 +100,19 @@ private:
         const http::verb method,
         const std::string_view target
     );
+
     static bool isPolicyInquiryRequest(
         const http::verb method,
         const std::string_view target
     );
 
     static void reportFailure(beast::error_code ec, char const *reason);
+
+    template <class Body, class Allocator>
+    static http::response<http::string_body> genEmptyBodyResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req,
+        http::status httpStatus
+    );
 
     template <class Body, class Allocator>
     static http::response<http::string_body> genGeneralResponse(
@@ -132,32 +145,48 @@ private:
             const std::string_view why
     );
 
+    template <class Body, class Allocator>
+    static http::response<http::string_body> genUnathorizedRequestResponse(
+        http::request<Body, http::basic_fields<Allocator>>& req
+    );
+
+    template <class Body, class Allocator, class Send> 
+    static bool authenticateUser(
+        http::request<Body, http::basic_fields<Allocator>>& req,
+        Send &&send,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator 
+    );
+
     template <class Body, class Allocator, class Send> 
     static void handleNewRequest(
         http::request<Body, http::basic_fields<Allocator>>&& req,
         Send &&send,
-        std::shared_ptr<ImmutableManager> immutableManager
+        std::shared_ptr<ImmutableManager> immutableManager,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator
     );
 
     template <class Body, class Allocator, class Send> 
     static bool handleLogin(
         http::request<Body, http::basic_fields<Allocator>>& req,
         Send &&send,
-        std::shared_ptr<ImmutableManager> immutableManager
+        std::shared_ptr<ImmutableManager> immutableManager,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator 
     );
 
     template <class Body, class Allocator, class Send> 
     static bool handlePolicyChange(
         http::request<Body, http::basic_fields<Allocator>>& req,
         Send &&send,
-        std::shared_ptr<ImmutableManager> immutableManager
+        std::shared_ptr<ImmutableManager> immutableManager,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator 
     );
 
     template <class Body, class Allocator, class Send> 
     static bool handlePolicyInquiry(
         http::request<Body, http::basic_fields<Allocator>>& req,
         Send &&send,
-        std::shared_ptr<ImmutableManager> immutableManager
+        std::shared_ptr<ImmutableManager> immutableManager,
+        std::shared_ptr<AuthTokenGenerator> tokenGenerator 
     );
 
     static std::string getParameterValue(
@@ -177,6 +206,7 @@ private:
 
     //_authStore;
     std::shared_ptr<ImmutableManager> _immutableManager = nullptr;
+    std::shared_ptr<AuthTokenGenerator> _tokenGenerator = nullptr;
 
 protected:
 
@@ -200,7 +230,8 @@ protected:
         explicit Session(
             tcp::socket&& socket,
             std::shared_ptr<ssl::context> ctx,
-            std::shared_ptr<ImmutableManager> immutableManager
+            std::shared_ptr<ImmutableManager> immutableManager,
+            std::shared_ptr<AuthTokenGenerator> tokenGenerator
         );
         ~Session();
 
@@ -235,6 +266,7 @@ protected:
         std::shared_ptr<void> _res;
         SendLambda _lambda;
         std::shared_ptr<ImmutableManager> _immutableManager = nullptr;
+        std::shared_ptr<AuthTokenGenerator> _tokenGenerator = nullptr;
 
     };
 
@@ -246,7 +278,8 @@ protected:
             net::io_context &ioc,
             std::shared_ptr<ssl::context> ctx,
             tcp::endpoint endpoint,
-            std::shared_ptr<ImmutableManager> immutableManager
+            std::shared_ptr<ImmutableManager> immutableManager,
+            std::shared_ptr<AuthTokenGenerator> tokenGenerator
         );
 
         void run();
@@ -259,6 +292,7 @@ protected:
         std::shared_ptr<ssl::context> _ctx = nullptr;
         tcp::acceptor _acceptor;
         std::shared_ptr<ImmutableManager> _immutableManager = nullptr;
+        std::shared_ptr<AuthTokenGenerator> _tokenGenerator = nullptr;
     };
 
     class PolicyApiRequestBody {
@@ -280,6 +314,43 @@ protected:
         json _parsedJson;
     };
 
+    class AuthTokenGenerator {
+    public:
+        AuthTokenGenerator(
+            const std::string privateKey,
+            const std::string publicKey
+        );
+        AuthTokenGenerator(
+            const std::string key
+        );
+        ~AuthTokenGenerator();
+
+        static std::string newToken(
+            const std::string &privateKey,
+            const std::string &user,
+            bool asymmetricSign
+        );
+        std::string newToken(const std::string &user) const;
+
+        static bool verifyToken(
+            const std::string &token,
+            const std::string &key,
+            const std::string &expectedUser,
+            bool asymmetricSign
+        );
+        bool verifyToken(const std::string &token, const std::string &expectedUser); 
+
+        static const char *CLAIM_KEY_USER;
+
+    private:
+        std::string _privateKey;
+        std::string _publicKey;
+        bool _asymmeticSign = false;
+
+        static const char *TOKEN_TYPE;
+        static const char *TOKEN_ISSUER;
+        static const char *TOKEN_ID;
+    };
 };
 
 #endif //define __IMMUTABLE_MGT_APIS_HH__
