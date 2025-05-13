@@ -13,6 +13,8 @@
 #include "./immutable_management_apis.hh"
 #include "../../common/util.hh"
 
+#include "./immutable_management_apis_auth_client_ldap.hh"
+
 // http server: https://live.boost.org/doc/libs/1_74_0/libs/beast/example/http/server/async/http_server_async.cpp
 // https server: https://live.boost.org/doc/libs/1_74_0/libs/beast/example/http/server/async-ssl/http_server_async_ssl.cpp
 
@@ -30,6 +32,8 @@ const char *ImmutableManagementApis::REQ_PATH_GETALL = "/getall";
 const char *ImmutableManagementApis::REQ_HEADER_TOKEN = "token";
 const char *ImmutableManagementApis::REQ_HEADER_USER = "user";
 
+const char *ImmutableManagementApis::REQ_BODY_KEY_USER = REQ_HEADER_USER;
+const char *ImmutableManagementApis::REQ_BODY_KEY_PASSWORD = "password";
 const char *ImmutableManagementApis::REQ_BODY_KEY_FILENAME = "name";
 const char *ImmutableManagementApis::REQ_BODY_KEY_POLICY = "policy";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE = "type";
@@ -351,14 +355,28 @@ bool ImmutableManagementApis::handleLogin(
     std::shared_ptr<ImmutableManager> immutableManager,
     std::shared_ptr<AuthTokenGenerator> tokenGenerator 
 ) {
-    // TODO validate the user credentials
-    std::string user = "admin", password;
+    PolicyApiRequestBody body(static_cast<std::string_view>(req.body()));
+    if (!body.hasUsername() || !body.hasPassword()) {
+        send(genBadRequestResponse(req, "Missing login credentials (username, password)."));
+        return false;
+    }
 
-    // return a token upon successful login
+    // extract the user credentials from the request body
+    std::string user = body.getUsername();
+    std::string password = body.getPassword();
+
+    if (LdapAuthClient::authUser(user, password)) {
+        // return a token upon successful login
+        json res;
+        res[REQ_HEADER_TOKEN] = tokenGenerator->newToken(user);
+        send(genGeneralResponse(req, res.dump(), http::status::ok));
+        return true;
+    }
+
+    // return 401 upon login failure
     json res;
-    res[REQ_HEADER_TOKEN] = tokenGenerator->newToken(user);
-    send(genGeneralResponse(req, res.dump(), http::status::ok));
-    return true;
+    send(genUnathorizedRequestResponse(req));
+    return false;
 }
 
 template <class Body, class Allocator, class Send> 
@@ -885,6 +903,22 @@ bool ImmutableManagementApis::PolicyApiRequestBody::hasFullPolicy() const {
     ;
 }
 
+bool ImmutableManagementApis::PolicyApiRequestBody::hasUsername() const {
+    return
+        !_parsedJson.is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_USER)
+        && _parsedJson[REQ_BODY_KEY_USER].is_string()
+    ;
+}
+
+bool ImmutableManagementApis::PolicyApiRequestBody::hasPassword() const {
+    return
+        !_parsedJson.is_null()
+        && _parsedJson.contains(REQ_BODY_KEY_PASSWORD)
+        && _parsedJson[REQ_BODY_KEY_PASSWORD].is_string()
+    ;
+}
+
 std::string ImmutableManagementApis::PolicyApiRequestBody::getObjectName() const {
     try {
         return _parsedJson[REQ_BODY_KEY_FILENAME].get<std::string>();
@@ -923,6 +957,22 @@ ImmutablePolicy ImmutableManagementApis::PolicyApiRequestBody::getImmutablePolic
     //DLOG(INFO) << "Parsed policy: " << policy.to_string();
 
     return policy;
+}
+
+std::string ImmutableManagementApis::PolicyApiRequestBody::getUsername() const {
+    try {
+        return _parsedJson[REQ_BODY_KEY_USER].get<std::string>();
+    } catch (std::exception &e) {
+    }
+    return "";
+}
+
+std::string ImmutableManagementApis::PolicyApiRequestBody::getPassword() const {
+    try {
+        return _parsedJson[REQ_BODY_KEY_PASSWORD].get<std::string>();
+    } catch (std::exception &e) {
+    }
+    return "";
 }
 
 ImmutableManagementApis::AuthTokenGenerator::AuthTokenGenerator(

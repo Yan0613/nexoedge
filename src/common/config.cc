@@ -400,6 +400,11 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
         _proxy.zmqITF.numWorkers = std::min(std::max(1, readInt(_proxyPt, "zmq_interface.num_workers")), MAX_NUM_WORKERS);
         _proxy.zmqITF.port = readInt(_proxyPt, "zmq_interface.port");
 
+        // ldap authentication
+        _proxy.ldapAuth.uri = readString(_proxyPt, "ldap_auth.uri");
+        _proxy.ldapAuth.userOrg = readString(_proxyPt, "ldap_auth.user_organization");
+        _proxy.ldapAuth.dnSuffix = readString(_proxyPt, "ldap_auth.dn_suffix");
+
         // reporter db
         _proxy.reporterDB.ip = readString(_proxyPt, "reporter_db.ip");
         _proxy.reporterDB.port = readInt(_proxyPt, "reporter_db.port");
@@ -937,6 +942,20 @@ int Config::getFailureTimeout() const {
     return _general.failureDetection.timeout;
 }
 
+std::string Config::getProxyLdapUri() const {
+    assert(!_generalPt.empty());
+    return _proxy.ldapAuth.uri;
+}
+
+std::string Config::getProxyLdapUserOrganization() const {
+    assert(!_generalPt.empty());
+    return _proxy.ldapAuth.userOrg;
+}
+
+std::string Config::getProxyLdapDnSuffix() const {
+    assert(!_generalPt.empty());
+    return _proxy.ldapAuth.dnSuffix;
+}
 
 std::string Config::getProxyReporterDBIP() const {
     assert(!_proxyPt.empty());
@@ -1195,6 +1214,15 @@ void Config::printConfig() const {
             "   - Port                    : %d\n"
             , getProxyZmqNumWorkers()
             , getProxyZmqPort()
+        );
+        length += snprintf(buf + length, bufSize - length,
+            " - Immutable Storage Policy Manager\n"
+            "   - API LDAP auth URI       : %s\n"
+            "   - API LDAP auth user org. : %s\n"
+            "   - API LDAP auth DN suffix.: %s\n"
+            , getProxyLdapUri().c_str()
+            , getProxyLdapUserOrganization().c_str()
+            , getProxyLdapDnSuffix().c_str()
         );
         length += snprintf(buf + length, bufSize - length,
             " - Reporter DB (Redis)\n"

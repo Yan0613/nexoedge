@@ -135,6 +135,10 @@ public:
     int getFileRecoverBatchSize() const;
     int getChunkScanSamplingPolicy() const;
     double getChunkScanSamplingRate() const;
+    // proxy.ldap_auth
+    std::string getProxyLdapUri() const;
+    std::string getProxyLdapUserOrganization() const;
+    std::string getProxyLdapDnSuffix() const;
     // proxy.reporter
     std::string getProxyReporterDBIP() const;
     unsigned short getProxyReporterDBPort() const;
@@ -341,6 +345,11 @@ private:
                 double rate;
             } chunkScanSampling;
         } recovery;
+        struct {
+            std::string uri;
+            std::string userOrg;
+            std::string dnSuffix;
+        } ldapAuth;
         struct {
             std::string ip;
             unsigned short port; 

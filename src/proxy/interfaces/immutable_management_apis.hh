@@ -46,6 +46,8 @@ public:
     // request body keys
     static const char *REQ_BODY_KEY_FILENAME;
     static const char *REQ_BODY_KEY_POLICY;
+    static const char *REQ_BODY_KEY_USER;
+    static const char *REQ_BODY_KEY_PASSWORD;
     static const char *REQ_BODY_SUBKEY_POLICY_TYPE;
     static const char *REQ_BODY_SUBKEY_POLICY_START_DATE;
     static const char *REQ_BODY_SUBKEY_POLICY_DURATION;
@@ -302,6 +304,8 @@ protected:
 
         std::string getObjectName() const;
         ImmutablePolicy getImmutablePolicy() const;
+        std::string getUsername() const;
+        std::string getPassword() const;
 
         bool hasPolicyType() const;
         bool hasPolicyStartDate() const;
@@ -309,6 +313,8 @@ protected:
         bool hasPolicyAutoRenew() const;
         bool hasFullPolicy() const;
         bool hasObjectName() const;
+        bool hasUsername() const;
+        bool hasPassword() const;
 
     private:
         json _parsedJson;
