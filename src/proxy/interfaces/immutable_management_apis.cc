@@ -29,7 +29,7 @@ const char *ImmutableManagementApis::REQ_PATH_RENEW = "/renew";
 const char *ImmutableManagementApis::REQ_PATH_GET = "/get";
 const char *ImmutableManagementApis::REQ_PATH_GETALL = "/getall";
 
-const char *ImmutableManagementApis::REQ_HEADER_TOKEN = "token";
+const char *ImmutableManagementApis::REQ_HEADER_TOKEN = "auth_token";
 const char *ImmutableManagementApis::REQ_HEADER_USER = "user";
 
 const char *ImmutableManagementApis::REQ_BODY_KEY_USER = REQ_HEADER_USER;
@@ -38,7 +38,7 @@ const char *ImmutableManagementApis::REQ_BODY_KEY_FILENAME = "name";
 const char *ImmutableManagementApis::REQ_BODY_KEY_POLICY = "policy";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_TYPE = "type";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_START_DATE = "start_date";
-const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION = "duration";
+const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_DURATION = "period";
 const char *ImmutableManagementApis::REQ_BODY_SUBKEY_POLICY_AUTO_RENEW = "auto_renew";
 
 const char *ImmutableManagementApis::REP_BODY_KEY_RESULT = "result";
