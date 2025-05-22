@@ -101,7 +101,9 @@ Proxy::Proxy(ProxyCoordinator *coordinator, std::map<int, std::string> *map, BgC
     /* immutable storage */
     _immutableManager = std::make_shared<ImmutableManager>();
 
-    _immutableManagementApis = new ImmutableManagementApis(_immutableManager);
+    if (config.enableImmutableMgtApi()) {
+        _immutableManagementApis = new ImmutableManagementApis(_immutableManager);
+    }
 }
 
 Proxy::~Proxy() {
@@ -126,6 +128,8 @@ Proxy::~Proxy() {
     if (_releaseDedupModule) {
         delete _dedup;
     }
+    // immutable storage
+    delete _immutableManagementApis;
     // staging
     if (_stagingEnabled) {
         pthread_cond_signal(&_stagingBgWritePending);

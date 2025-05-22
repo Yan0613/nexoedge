@@ -41,7 +41,7 @@ bool LdapAuthClient::authUser(const std::string user, std::string password) {
         }
     }
 
-    LOG(INFO) << "DN = [" << dn << "] ou = [" << ou << "]";
+    DLOG(INFO) << "[Immutable Policy Management API (LDAP auth)] DN = [" << dn << "] ou = [" << ou << "]";
  
     // try binding the directory (and see if the user can be authenticated)
     int ret = ldap_sasl_bind_s(ld, dn.c_str(), LDAP_SASL_SIMPLE, cred, NULL, NULL, servercred);
@@ -59,7 +59,7 @@ bool LdapAuthClient::authUser(const std::string user, std::string password) {
 bool LdapAuthClient::initClient(LDAP **ld) {
     std::string uri = Config::getInstance().getProxyLdapUri(); //"ldap://localhost:51389";
 
-    LOG(INFO) << "URI = " << uri;
+    DLOG(INFO) << "[Immutable Policy Management API (LDAP auth)] URI = " << uri;
 
     if (ldap_initialize(ld, uri.c_str()) != LDAP_SUCCESS) {
         *ld = nullptr;

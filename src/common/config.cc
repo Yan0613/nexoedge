@@ -405,6 +405,44 @@ void Config::setConfigPath (const char *generalPath, const char *proxyPath, cons
         _proxy.ldapAuth.userOrg = readString(_proxyPt, "ldap_auth.user_organization");
         _proxy.ldapAuth.dnSuffix = readString(_proxyPt, "ldap_auth.dn_suffix");
 
+        // immutable management api
+        _proxy.immutableMgtApi.enabled = readBool(_proxyPt, "immutable_mgt_apis.enabled");
+        if (_proxy.immutableMgtApi.enabled) {
+            _proxy.immutableMgtApi.ip = readString(_proxyPt, "immutable_mgt_apis.ip");
+            _proxy.immutableMgtApi.port = readInt(_proxyPt, "immutable_mgt_apis.port");
+            if (_proxy.immutableMgtApi.port <= 0 || _proxy.immutableMgtApi.port > 65535) {
+                LOG(WARNING) << "Invalid port for immutable policy management APIs, setting it to the default (" << 59003 << ")";
+                _proxy.immutableMgtApi.port = 59003;
+            }
+            _proxy.immutableMgtApi.numWorkers = readInt(_proxyPt, "immutable_mgt_apis.num_workers");
+            if (_proxy.immutableMgtApi.numWorkers <= 0) {
+                LOG(WARNING) << "Invalid number of workers for immutable policy management APIs, setting it to the default (" << 4 << ")";
+                _proxy.immutableMgtApi.numWorkers = 4;
+            }
+            _proxy.immutableMgtApi.timeoutInSeconds = std::max(1, readInt(_proxyPt, "immutable_mgt_apis.timeout"));
+            _proxy.immutableMgtApi.sslCert = readString(_proxyPt, "immutable_mgt_apis.ssl_cert");
+            _proxy.immutableMgtApi.sslCertKey = readString(_proxyPt, "immutable_mgt_apis.ssl_cert_key");
+            _proxy.immutableMgtApi.sslCertPassword = readString(_proxyPt, "immutable_mgt_apis.ssl_cert_password");
+            _proxy.immutableMgtApi.sslDH = readString(_proxyPt, "immutable_mgt_apis.ssl_dh");
+            _proxy.immutableMgtApi.jwt.asymmetric.privateKey = readString(_proxyPt, "immutable_mgt_apis.jwt_private_key");
+            _proxy.immutableMgtApi.jwt.asymmetric.publicKey = readString(_proxyPt, "immutable_mgt_apis.jwt_public_key");
+            _proxy.immutableMgtApi.jwt.symmetric.secretKey = readString(_proxyPt, "immutable_mgt_apis.jwt_secret_key");
+            if (
+                !_proxy.immutableMgtApi.jwt.asymmetric.privateKey.empty()
+                && !_proxy.immutableMgtApi.jwt.asymmetric.publicKey.empty()
+            ) {
+                _proxy.immutableMgtApi.jwt.useAsymmetic = true;
+            } else if (
+                !_proxy.immutableMgtApi.jwt.symmetric.secretKey.empty()
+            ) {
+                _proxy.immutableMgtApi.jwt.useAsymmetic = false;
+            } else {
+                _proxy.immutableMgtApi.jwt.useAsymmetic = false;
+                LOG(WARNING) << "No keys set for JWT token generation, using the default one";
+                _proxy.immutableMgtApi.jwt.symmetric.secretKey = "nexoedge_jwt_generation";
+            }
+        }
+
         // reporter db
         _proxy.reporterDB.ip = readString(_proxyPt, "reporter_db.ip");
         _proxy.reporterDB.port = readInt(_proxyPt, "reporter_db.port");
@@ -943,18 +981,83 @@ int Config::getFailureTimeout() const {
 }
 
 std::string Config::getProxyLdapUri() const {
-    assert(!_generalPt.empty());
+    assert(!_proxyPt.empty());
     return _proxy.ldapAuth.uri;
 }
 
 std::string Config::getProxyLdapUserOrganization() const {
-    assert(!_generalPt.empty());
+    assert(!_proxyPt.empty());
     return _proxy.ldapAuth.userOrg;
 }
 
 std::string Config::getProxyLdapDnSuffix() const {
-    assert(!_generalPt.empty());
+    assert(!_proxyPt.empty());
     return _proxy.ldapAuth.dnSuffix;
+}
+
+bool Config::enableImmutableMgtApi() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.enabled;
+}
+
+std::string Config::getProxyImmutableMgtApiIP() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.ip;
+}
+
+unsigned short Config::getProxyImmutableMgtApiPort() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.port;
+}
+
+int Config::getProxyImmutableMgtApiNumWorkerThreads() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.numWorkers;
+}
+
+std::string Config::getProxyImmutableMgtApiSSLCert() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.sslCert;
+}
+
+std::string Config::getProxyImmutableMgtApiSSLCertKey() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.sslCertKey;
+}
+
+std::string Config::getProxyImmutableMgtApiSSLCertPassword() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.sslCertPassword;
+}
+
+std::string Config::getProxyImmutableMgtApiSSLDH() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.sslDH;
+}
+
+bool Config::proxyImmutableMgtApiJWTUseAsymmetric() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.jwt.useAsymmetic;
+}
+
+std::string Config::getProxyImmutableMgtApiJWTSecretKey() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.jwt.symmetric.secretKey;
+}
+
+std::string Config::getProxyImmutableMgtApiJWTPrivateKey() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.jwt.asymmetric.privateKey;
+}
+
+std::string Config::getProxyImmutableMgtApiJWTPublicKey() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.jwt.asymmetric.publicKey;
+}
+
+int Config::getProxyImmutableMgtApiSessionTimeoutInSeconds() const {
+    assert(!_proxyPt.empty());
+    return _proxy.immutableMgtApi.timeoutInSeconds;
 }
 
 std::string Config::getProxyReporterDBIP() const {
@@ -1217,12 +1320,42 @@ void Config::printConfig() const {
         );
         length += snprintf(buf + length, bufSize - length,
             " - Immutable Storage Policy Manager\n"
-            "   - API LDAP auth URI       : %s\n"
-            "   - API LDAP auth user org. : %s\n"
-            "   - API LDAP auth DN suffix.: %s\n"
+            "   - API                     : %s\n"
+            "     - IP                    : %s\n"
+            "     - Port                  : %u\n"
+            "     - Number of workers     : %u\n"
+            "     - SSL                   : %s\n"
+            "       - Cert file path      : %s\n"
+            "       - Cert key file path  : %s\n"
+            "       - Cert pwd file path  : %s\n"
+            "       - DH param. file path : %s\n"
+            "     - JWT token\n"
+            "       - Encryption          : %s\n"
+            "       - Private key path    : %s\n"
+            "       - Public key path     : %s\n"
+            "       - Secret key path     : %s\n"
+            "     - LDAP authentication\n"
+            "       - URI                 : %s\n"
+            "       - User organization   : %s\n"
+            "       - DN suffix           : %s\n"
+            "     - Connection timeout    : %us\n"
+            , enableImmutableMgtApi()? "On" : "Off"
+            , getProxyImmutableMgtApiIP().c_str()
+            , getProxyImmutableMgtApiPort()
+            , getProxyImmutableMgtApiNumWorkerThreads()
+            , getProxyImmutableMgtApiSSLCert().empty() || getProxyImmutableMgtApiSSLCertKey().empty()? "Off" : "On"
+            , getProxyImmutableMgtApiSSLCertPassword().c_str()
+            , getProxyImmutableMgtApiSSLCert().c_str()
+            , getProxyImmutableMgtApiSSLCertKey().c_str()
+            , getProxyImmutableMgtApiSSLDH().c_str()
+            , proxyImmutableMgtApiJWTUseAsymmetric()? "RSA256" : "SHA256"
+            , getProxyImmutableMgtApiJWTPrivateKey().c_str()
+            , getProxyImmutableMgtApiJWTPublicKey().c_str()
+            , getProxyImmutableMgtApiJWTSecretKey().c_str()
             , getProxyLdapUri().c_str()
             , getProxyLdapUserOrganization().c_str()
             , getProxyLdapDnSuffix().c_str()
+            , getProxyImmutableMgtApiSessionTimeoutInSeconds()
         );
         length += snprintf(buf + length, bufSize - length,
             " - Reporter DB (Redis)\n"

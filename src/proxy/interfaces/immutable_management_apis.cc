@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 
-#include <sstream>
+#include <fstream>
 
 #include <nlohmann/json.hpp>
 
@@ -56,25 +56,71 @@ using json = nlohmann::json;
 
 using traits = jwt::traits::nlohmann_json;
 
+static void readFileToString(std::ifstream &inFile, std::string &out) {
+    int length, readSize, bufSize = 16 << 10;
+    char buf[bufSize];
+
+    // check the size of file, i.e., the total number of bytes to read
+    inFile.seekg(0, inFile.end);
+    length = inFile.tellg();
+    inFile.seekg(0, inFile.beg);
+    while (length > 0) {
+        // read only up to bufSize
+        readSize = std::min(length, bufSize);
+        // read the data from the file
+        inFile.read(buf, readSize);
+        // append the read data to the output string
+        out.append(buf, readSize);
+        // adjust the reamining number of bytes to read
+        length -= readSize;
+    }
+}
+
 ImmutableManagementApis::ImmutableManagementApis(
         std::shared_ptr<ImmutableManager> immutableManager
 ) : _httpServerWorkerCxtPool(16), _immutableManager(immutableManager) {
 
-    //Config &config = Config::getInstance();
+    Config &config = Config::getInstance();
 
-    _numWorkerThreads = 4; // TODO take the number of worker threads from configuration
+    _numWorkerThreads = config.getProxyImmutableMgtApiNumWorkerThreads();
 
     // ip address and port of the server to bind to
-    auto const address = net::ip::make_address("0.0.0.0");
-    auto const port = static_cast<unsigned short>(59003);
+    const auto address = net::ip::make_address(config.getProxyImmutableMgtApiIP());
+    const unsigned short port = config.getProxyImmutableMgtApiPort();
 
     // context for ssl certificate
     std::shared_ptr<ssl::context> sslCtx = std::make_shared<ssl::context>(ssl::context::tlsv12);
     bool sslSet = loadServerCertificate(*sslCtx);
 
     // initialize the token generator
-    // TODO replace the key with a user input key
-    _tokenGenerator = std::make_shared<AuthTokenGenerator>("secret_key");
+    if (config.proxyImmutableMgtApiJWTUseAsymmetric()) {
+        std::string publicKey, privateKey;
+        std::ifstream inFile;
+
+        // load the private key
+        inFile.open(config.getProxyImmutableMgtApiJWTPrivateKey());
+        readFileToString(inFile, privateKey);
+        inFile.close();
+
+        // load the public key
+        inFile.open(config.getProxyImmutableMgtApiJWTPublicKey());
+        readFileToString(inFile, publicKey);
+        inFile.close();
+
+        // init the token generator
+        _tokenGenerator = std::make_shared<AuthTokenGenerator>(privateKey, publicKey);
+    } else {
+        std::string secretKey;
+        std::ifstream inFile;
+
+        // load the secret key
+        inFile.open(config.getProxyImmutableMgtApiJWTSecretKey());
+        readFileToString(inFile, secretKey);
+        inFile.close();
+
+        // init the token generator
+        _tokenGenerator = std::make_shared<AuthTokenGenerator>(secretKey);
+    }
 
     // listen to incoming requests
     _serverThread = std::make_shared<Listener>(
@@ -184,12 +230,41 @@ void ImmutableManagementApis::reportFailure(
 }
 
 bool ImmutableManagementApis::loadServerCertificate(ssl::context &ctx) const {
-    //Config &config = Config::getInstance();
 
     std::string password;
     std::string cert, key, dh;
 
-    // TODO load the certificate, key, and DH parameter file
+    Config &config = Config::getInstance();
+    std::ifstream inFile;
+    std::string passwordFilePath = config.getProxyImmutableMgtApiSSLCertPassword();
+    std::string certFilePath = config.getProxyImmutableMgtApiSSLCert();
+    std::string certKeyFilePath = config.getProxyImmutableMgtApiSSLCertKey();
+    std::string dhFilePath = config.getProxyImmutableMgtApiSSLDH();
+
+    // load the certificate password
+    if (!passwordFilePath.empty()) {
+        inFile.open(passwordFilePath);
+        readFileToString(inFile, password);
+        inFile.close();
+    }
+
+    // load the certificate and key
+    if (!certFilePath.empty() && !certKeyFilePath.empty()) {
+        inFile.open(certFilePath);
+        readFileToString(inFile, cert);
+        inFile.close();
+
+        inFile.open(certKeyFilePath);
+        readFileToString(inFile, key);
+        inFile.close();
+    }
+
+    // load any DH parameters
+    if (!dhFilePath.empty()) {
+        inFile.open(dhFilePath);
+        readFileToString(inFile, dh);
+        inFile.close();
+    }
 
     if (password.empty() != false) {
         ctx.set_password_callback(
@@ -289,7 +364,7 @@ template <class Body, class Allocator>
 }
 
 template <class Body, class Allocator>
-    http::response<http::string_body> ImmutableManagementApis::genUnathorizedRequestResponse(
+    http::response<http::string_body> ImmutableManagementApis::genUnauthorizedRequestResponse(
         http::request<Body, http::basic_fields<Allocator>>& req
 ) {
     return genEmptyBodyResponse(req, http::status::unauthorized);
@@ -304,9 +379,8 @@ bool ImmutableManagementApis::authenticateUser(
     // verify the provided token against the provided user
     std::string token (req[REQ_HEADER_TOKEN].begin(), req[REQ_HEADER_TOKEN].end());
     std::string user (req[REQ_HEADER_USER].begin(), req[REQ_HEADER_USER].end());
-    //LOG(INFO) << "Got token " << token; 
     if (tokenGenerator->verifyToken(token, user) == false) {
-        send(genUnathorizedRequestResponse(req));
+        send(genUnauthorizedRequestResponse(req));
         return false;
     }
     return true;
@@ -369,13 +443,13 @@ bool ImmutableManagementApis::handleLogin(
         // return a token upon successful login
         json res;
         res[REQ_HEADER_TOKEN] = tokenGenerator->newToken(user);
-        send(genGeneralResponse(req, res.dump(), http::status::ok));
+        send(genGeneralResponse(req, res, http::status::ok));
         return true;
     }
 
     // return 401 upon login failure
     json res;
-    send(genUnathorizedRequestResponse(req));
+    send(genUnauthorizedRequestResponse(req));
     return false;
 }
 
@@ -679,10 +753,13 @@ ImmutableManagementApis::Session::Session(
 ) : _sslCtx(ctx), _lambda(*this), _immutableManager(immutableManager), _tokenGenerator(tokenGenerator)
 {
     if (_sslCtx) {
+        // run a session over SSL
         _sslStream = new net::ssl::stream<beast::tcp_stream>(std::move(socket), *_sslCtx);
     } else {
+        // run a session over plain-text
         _tcpStream = new beast::tcp_stream(std::move(socket));
     }
+    _timeout = Config::getInstance().getProxyImmutableMgtApiSessionTimeoutInSeconds();
 }
 
 ImmutableManagementApis::Session::~Session() {
@@ -742,7 +819,7 @@ void ImmutableManagementApis::Session::doRead() {
     beast::tcp_stream &stream =
         _sslStream? beast::get_lowest_layer(*_sslStream) : *_tcpStream
     ;
-    stream.expires_after(std::chrono::seconds(timeout));
+    stream.expires_after(std::chrono::seconds(_timeout));
 
     if (_sslStream) {
         // read a request
@@ -810,7 +887,7 @@ void ImmutableManagementApis::Session::doClose() {
     beast::tcp_stream &stream =
         _sslStream? beast::get_lowest_layer(*_sslStream) : *_tcpStream
     ;
-    stream.expires_after(std::chrono::seconds(timeout));
+    stream.expires_after(std::chrono::seconds(_timeout));
 
     if (_sslStream) {
         // Perform the SSL shutdown

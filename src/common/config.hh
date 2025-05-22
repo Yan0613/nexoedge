@@ -139,6 +139,20 @@ public:
     std::string getProxyLdapUri() const;
     std::string getProxyLdapUserOrganization() const;
     std::string getProxyLdapDnSuffix() const;
+    // proxy.immutable_mgt_api
+    bool enableImmutableMgtApi() const;
+    std::string getProxyImmutableMgtApiIP() const;
+    unsigned short getProxyImmutableMgtApiPort() const;
+    int getProxyImmutableMgtApiNumWorkerThreads() const;
+    std::string getProxyImmutableMgtApiSSLCert() const;
+    std::string getProxyImmutableMgtApiSSLCertKey() const;
+    std::string getProxyImmutableMgtApiSSLCertPassword() const;
+    std::string getProxyImmutableMgtApiSSLDH() const;
+    bool proxyImmutableMgtApiJWTUseAsymmetric() const;
+    std::string getProxyImmutableMgtApiJWTSecretKey() const;
+    std::string getProxyImmutableMgtApiJWTPrivateKey() const;
+    std::string getProxyImmutableMgtApiJWTPublicKey() const;
+    int getProxyImmutableMgtApiSessionTimeoutInSeconds() const;
     // proxy.reporter
     std::string getProxyReporterDBIP() const;
     unsigned short getProxyReporterDBPort() const;
@@ -350,6 +364,27 @@ private:
             std::string userOrg;
             std::string dnSuffix;
         } ldapAuth;
+        struct {
+            struct {
+                bool useAsymmetic;
+                struct {
+                    std::string secretKey;
+                } symmetric;
+                struct {
+                    std::string privateKey;
+                    std::string publicKey;
+                } asymmetric;
+            } jwt;
+            std::string ip;
+            unsigned short port;
+            int numWorkers;
+            int timeoutInSeconds;
+            std::string sslCert;
+            std::string sslCertKey;
+            std::string sslCertPassword;
+            std::string sslDH;
+            bool enabled;
+        } immutableMgtApi;
         struct {
             std::string ip;
             unsigned short port; 

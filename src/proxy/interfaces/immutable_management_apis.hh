@@ -148,7 +148,7 @@ private:
     );
 
     template <class Body, class Allocator>
-    static http::response<http::string_body> genUnathorizedRequestResponse(
+    static http::response<http::string_body> genUnauthorizedRequestResponse(
         http::request<Body, http::basic_fields<Allocator>>& req
     );
 
@@ -256,8 +256,6 @@ protected:
 
     private:
 
-        const int timeout = 60;
-
         net::ssl::stream<beast::tcp_stream> *_sslStream = nullptr;  /*<< stream for SSL connection */
         beast::tcp_stream *_tcpStream = nullptr;                    /*<< stream for non-SSL connection */
 
@@ -269,7 +267,7 @@ protected:
         SendLambda _lambda;
         std::shared_ptr<ImmutableManager> _immutableManager = nullptr;
         std::shared_ptr<AuthTokenGenerator> _tokenGenerator = nullptr;
-
+        int _timeout = 60;
     };
 
     // Accepts incoming connections and launches the Sessions

@@ -37,6 +37,8 @@ const char *testNonExistFileName = "test_non_exits_file.txt";
 const char *testDstFileName = "test_file_dst.txt";
 
 std::string apiResponse;
+struct curl_slist *headerList = nullptr;
+std::string username = "customuser", password = "custompassword";
 
 int numFailed = 0;
 int numRan = 0;
@@ -139,39 +141,64 @@ size_t receiveApiResponse(char *incomingData, size_t size, size_t nmemb, void *u
     return size * nmemb;
 }
 
+static void setEndpoint(std::string &endpoint, const std::string path, const std::string reqBody) {
+    const Config &config = Config::getInstance();
+
+    bool useSSL = !(config.getProxyImmutableMgtApiSSLCert().empty() || config.getProxyImmutableMgtApiSSLCertKey().empty());
+
+    std::string host = config.getProxyImmutableMgtApiIP();
+    if (host.compare("0.0.0.0") == 0) { host = "localhost"; } 
+    endpoint.append(useSSL? "https" : "http").append("://");
+    endpoint.append(host).append(":");
+    endpoint.append(std::to_string(config.getProxyImmutableMgtApiPort()));
+    endpoint.append(path);
+    if (!reqBody.empty()) {
+        endpoint.append("?").append(reqBody);
+    }
+}
+
 long sendPostRequest(std::string path, std::string reqBody) {
     apiResponse.clear();
 
-    long responseCode = 400;
+    long responseCode = 0;
     CURL *curlCli = curl_easy_init();
     if (curlCli) {
-        std::string endpoint = "http://localhost:59003" + path;
+        std::string endpoint;
+        setEndpoint(endpoint, path, "");
         if (
             curl_easy_setopt(curlCli, CURLOPT_URL, endpoint.c_str()) == CURLE_OK // set the API endpoint and path
+            && curl_easy_setopt(curlCli, CURLOPT_SSL_VERIFYHOST, 0) == CURLE_OK // bypass certificate verification
+            && curl_easy_setopt(curlCli, CURLOPT_SSL_VERIFYPEER, 0) == CURLE_OK // bypass certificate verification
             && curl_easy_setopt(curlCli, CURLOPT_POST, 1) == CURLE_OK // use POST
             && curl_easy_setopt(curlCli, CURLOPT_POSTFIELDS, reqBody.c_str()) == CURLE_OK // set the request body
             && curl_easy_setopt(curlCli, CURLOPT_POSTFIELDSIZE, reqBody.size()) == CURLE_OK // set the request body length
             && curl_easy_setopt(curlCli, CURLOPT_WRITEFUNCTION, receiveApiResponse) == CURLE_OK // set the response retrieval function
+            && curl_easy_setopt(curlCli, CURLOPT_HTTPHEADER, headerList) == CURLE_OK // set the authentication headers
             && curl_easy_perform(curlCli) == CURLE_OK // issue the request
         ) {
             curl_easy_getinfo(curlCli, CURLINFO_RESPONSE_CODE, &responseCode);
         }
         curl_easy_cleanup(curlCli); // clean up
     }
+
     return responseCode;
 }
 
 long sendGetRequest(std::string path, std::string reqBody) {
     apiResponse.clear();
 
-    long responseCode = 400;
+    long responseCode = 0;
     CURL *curlCli = curl_easy_init();
     if (curlCli) {
-        std::string endpoint = "http://localhost:59003" + path + "?" + reqBody;
+        std::string endpoint;
+        setEndpoint(endpoint, path, reqBody);
         if (
             curl_easy_setopt(curlCli, CURLOPT_URL, endpoint.c_str()) == CURLE_OK // set the API endpoint and path
+            && curl_easy_setopt(curlCli, CURLOPT_SSL_VERIFYHOST, 0) == CURLE_OK // bypass certificate verification
+            && curl_easy_setopt(curlCli, CURLOPT_SSL_VERIFYPEER, 0) == CURLE_OK // bypass certificate verification
             && curl_easy_setopt(curlCli, CURLOPT_WRITEFUNCTION, receiveApiResponse) == CURLE_OK // set the response retrieval function
-            && curl_easy_setopt(curlCli, CURLOPT_HTTPGET, 1) == CURLE_OK // use POST
+            && curl_easy_setopt(curlCli, CURLOPT_HTTPGET, 1) == CURLE_OK // use GET
+            && curl_easy_setopt(curlCli, CURLOPT_HTTPHEADER, headerList) == CURLE_OK // set the authentication headers
             && curl_easy_perform(curlCli) == CURLE_OK // issue the request
         ) {
             curl_easy_getinfo(curlCli, CURLINFO_RESPONSE_CODE, &responseCode);
@@ -213,6 +240,18 @@ bool extractResultFromResponse(std::string &result) {
     return false;
 }
 
+bool extractTokenFromResponse(std::string &result) {
+    try {
+        json resBodyJson = json::parse(apiResponse);
+        if (resBodyJson.contains(ImmutableManagementApis::REQ_HEADER_TOKEN)) {
+            result = resBodyJson[ImmutableManagementApis::REQ_HEADER_TOKEN].get<std::string>();
+            return true;
+        }
+    } catch (std::exception &e) {
+    }
+    return false;
+}
+
 long sendPolicyGetRequest(const std::string &name, const std::string &policyType) {
     std::string query;
     query.append(ImmutableManagementApis::REQ_BODY_KEY_FILENAME).append("=").append(Util::urlEncode(name));
@@ -232,6 +271,29 @@ long sendPolicyChangeRequest(const std::string &name, const ImmutablePolicy &pol
     return sendPostRequest(path, reqBodyJson.dump());
 }
 
+long sendMalformedAuthRequest() {
+    std::string path = ImmutableManagementApis::REQ_PATH_LOGIN;
+    json reqBodyJson;
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_USER] = username;
+    return sendPostRequest(path, reqBodyJson.dump());
+}
+
+long sendInvalidAuthRequest() {
+    std::string path = ImmutableManagementApis::REQ_PATH_LOGIN;
+    json reqBodyJson;
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_USER] = username;
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_PASSWORD] = password + "-incorrect";
+    return sendPostRequest(path, reqBodyJson.dump());
+}
+
+long sendAuthRequest() {
+    std::string path = ImmutableManagementApis::REQ_PATH_LOGIN;
+    json reqBodyJson;
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_USER] = username;
+    reqBodyJson[ImmutableManagementApis::REQ_BODY_KEY_PASSWORD] = password;
+    return sendPostRequest(path, reqBodyJson.dump());
+}
+
 //==========//
 // Clean up //
 //==========//
@@ -241,6 +303,60 @@ void cleanup() {
     File f;
     setDefaultTestFile(f);
     store->deleteAllPolicies(f);
+}
+
+//====================//
+// API Authentication //
+//====================//
+
+bool testAuthentication() {
+    if (store == nullptr) { return false; }
+    numRan++;
+
+    bool okay = false;
+    long response = 0;
+    std::string token;
+
+    // test malformd request body for authentication API
+    response = sendMalformedAuthRequest();
+    okay = response == 400;
+    if (!okay) {
+        printf("> Failed to get the expected authentication result with no password! (code = %lu, expect 400)\n", response);
+        return false;
+    }
+
+    // test invalid credentials for authentication API
+    response = sendInvalidAuthRequest();
+    okay = response == 401;
+    if (!okay) {
+        printf("> Failed to get the expected authentication result for an invalid username and password! (code = %lu, expect 401)\n", response);
+        return false;
+    }
+    
+    // test valid credentials for authentication API
+    response = sendAuthRequest();
+    okay = response == 200 && extractTokenFromResponse(token);
+    if (!okay) {
+        printf("> Failed to authenticate with a valid username and password! response = %s\n", apiResponse.c_str());
+        return false;
+    }
+    printf("> Passed the authentication API test, got token = %s\n", token.c_str());
+
+    // set the authentication token for subsequent tests
+    std::string header;
+    header.append(ImmutableManagementApis::REQ_HEADER_TOKEN);
+    header.append(": ");
+    header.append(token);
+    headerList = curl_slist_append(headerList, header.c_str());
+
+    // set also the user
+    header.clear();
+    header.append(ImmutableManagementApis::REQ_HEADER_USER);
+    header.append(": ");
+    header.append(username);
+    headerList = curl_slist_append(headerList, header.c_str());
+
+    return true;
 }
 
 //==============================//
@@ -812,6 +928,11 @@ void policyStateTests() {
 }
 
 void policyStoreTests() {
+
+    if (testViaApis) {
+        numFailed += !testAuthentication();
+    }
+
     // test policy set in future - should fail
     time_t futureTime;
     time(&futureTime);
@@ -950,6 +1071,7 @@ int main (int argc, char **argv) {
 
 cleanup:
 
+    curl_slist_free_all(headerList);
     shutdownProxy();
     delete store;
     store = nullptr;
@@ -958,3 +1080,4 @@ cleanup:
 
     return 0;
 }
+
