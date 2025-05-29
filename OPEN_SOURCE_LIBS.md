@@ -33,6 +33,10 @@ Nexoedge uses the following open-source libraries:
 
 - [Samba (SMB)][samba]
 
+### Immutable Storage Policy Management APIs
+
+- [JWT CPP][jwt_cpp] (v0.7.1)
+
 
 [libboost]: https://www.boost.org/
 
@@ -59,3 +63,5 @@ Nexoedge uses the following open-source libraries:
 [zeromqcpp]: https://github.com/zeromq/cppzmq
 
 [samba]: http://www.samba.org/
+
+[jwt_cpp]: https://github.com/Thalhammer/jwt-cpp

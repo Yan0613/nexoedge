@@ -78,6 +78,13 @@ See the [build and installation guide](INSTALL.md) for the installation instruct
 
 Nexoedge supports both proxy-side and agent-side data repair. System administrators can configure either option in the proxy configuration file.
 
+### Immutable Storage
+
+Nexoedge supports immutable storage management through per-file/object policies described in ISO/TS 18759:2022 (section 5 and 6).
+The policies allow administrators to specify retention period of data files/objects until when update and deletion is allowed (via 'immutable', 'modification-hold', and 'deletion-hold' policies).
+Administrators can also disable access to specified files/objects (via 'access-hold' policies). 
+The controls of policies are exposed to authorized administrators via RESTful APIs.
+
 ### System Monitoring Tools
 
 #### Status Report
