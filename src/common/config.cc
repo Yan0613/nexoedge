@@ -1344,9 +1344,9 @@ void Config::printConfig() const {
             , getProxyImmutableMgtApiPort()
             , getProxyImmutableMgtApiNumWorkerThreads()
             , getProxyImmutableMgtApiSSLCert().empty() || getProxyImmutableMgtApiSSLCertKey().empty()? "Off" : "On"
-            , getProxyImmutableMgtApiSSLCertPassword().c_str()
             , getProxyImmutableMgtApiSSLCert().c_str()
             , getProxyImmutableMgtApiSSLCertKey().c_str()
+            , getProxyImmutableMgtApiSSLCertPassword().c_str()
             , getProxyImmutableMgtApiSSLDH().c_str()
             , proxyImmutableMgtApiJWTUseAsymmetric()? "RSA256" : "SHA256"
             , getProxyImmutableMgtApiJWTPrivateKey().c_str()
