@@ -20,6 +20,8 @@
 #include "metastore/all.hh"
 #include "staging/staging.hh"
 #include "dedup/dedup.hh"
+#include "immutable/immutable_manager.hh"
+#include "interfaces/immutable_management_apis.hh"
 
 
 class Proxy {
@@ -466,6 +468,10 @@ protected:
     pthread_cond_t _stagingBgWritePending;                        /**< staging background write pending condition*/
     pthread_mutex_t _stagingBgWritePendingLock;                   /**< staging background write pending lock */
     RingBuffer<File> *_stagingPendingReadCache;                   /**< staging background read cache buffer */
+
+    // immutable
+    std::shared_ptr<ImmutableManager> _immutableManager = nullptr; /**< immutable manager */
+    ImmutableManagementApis *_immutableManagementApis = nullptr;   /**< APIs for immutability management */
 };
 
 #endif // define __PROXY_HH__

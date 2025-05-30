@@ -42,11 +42,17 @@ add_executable( metastore_test EXCLUDE_FROM_ALL proxy/metastore_test.cc )
 add_dependencies( metastore_test google-log )
 target_link_libraries( metastore_test ncloud_metastore glog )
 
+####################
+# Immutable Policy #
+####################
+add_executable( immutable_policy_test EXCLUDE_FROM_ALL proxy/immutable_manager_test.cc )
+add_dependencies( immutable_policy_test google-log )
+target_link_libraries( immutable_policy_test ncloud_immutability ncloud_proxy glog curl )
 
 #######################
 # Collection of tests #
 #######################
-set ( ncloud_unit_tests coding_test container_test coordinator_test agent_test zmq_client_test metastore_test )
+set ( ncloud_unit_tests coding_test container_test coordinator_test agent_test zmq_client_test metastore_test immutable_policy_test )
 add_custom_target( tests )
 add_dependencies( tests ${ncloud_unit_tests} )
 

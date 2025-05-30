@@ -101,6 +101,23 @@ In `proxy.ini`,
 - `zmq_interface`: ZeroMQ interface
   - `num_workers`: Number of workers request handling
   - `port`: Port number for ZeroMQ interface to listen on
+- `immutable_mgt_apis`: RESTful APIs for immutable storage policy management
+  - `enabled`: Whether to enable the APIs
+  - `ip`: IP for the immutable policy management APIs to listen on
+  - `port`: Port for the immutable policy management APIs to listen on
+  - `num_workers`: Number of workers to handle requsts
+  - `timeout`: Connection timeout in seconds
+  - `ssl_cert`: Path to the SSL certificate file for HTTPS communication
+  - `ssl_cert_key`: Path to the SSL certificate key file for HTTPS communication
+  - `ssl_cert_password`: Path to the SSL certificate password file for HTTPS communication
+  - `ssl_dh`: Path to the SSL DH parameter file for HTTPS communication
+  - `jwt_private_key`: Path to the private key file for asymetric JWT token generation
+  - `jwt_public_key`: Path to the public key file for asymetric JWT token generation
+  - `jwt_secret_key`: Path to the secret key file for symetric JWT token generation
+- `ldap_auth`: LDAP backed authentication (for authenticating administrators for immutable storage policy management)
+  - `uri`: URI of the LDAP server
+  - `user_organization`: User organization of the LDAP users
+  - `dn_suffix`: DN suffix of the LDAP users
 - `reporter_db`: Redis database for Reporter to store statistics
   - `ip`: IP for database (leave blank if reporter is not used)
   - `port`: Port of database

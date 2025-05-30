@@ -120,15 +120,15 @@ build_admin_portal_backend() {
 
 # ncloud proxy and agent
 build_proxy
-build_agent
-# preparation for CIFS builds
-pre_fs_build
-# cifs
-build_cifs
-# ncloud reporter
-build_reporter
-## ncloud admin-portal
-build_admin_portal_frontend
-build_admin_portal_backend
+#build_agent
+## preparation for CIFS builds
+#pre_fs_build
+## cifs
+#build_cifs
+## ncloud reporter
+#build_reporter
+### ncloud admin-portal
+#build_admin_portal_frontend
+#build_admin_portal_backend
 
 ${DOCKER} image list

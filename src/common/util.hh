@@ -3,8 +3,12 @@
 #ifndef __UTIL_HH__
 #define __UTIL_HH__
 
-#include "config.hh"
+#include <set>
+#include <string>
+
 #include <zmq.hpp>
+
+#include "config.hh"
 
 class Util {
 public:
@@ -93,6 +97,122 @@ public:
     static bool includeSample(int population, double samplingRate) {
         return rand() % (int)(population * 1e3) <= samplingRate * (population * 1e3);
     } 
+
+    /**
+     * URL encode an input string
+     *
+     * @param[in] src string to encode
+     * @return encoded string
+     **/
+    static std::string urlEncode(const std::string &src) {
+        const std::map<char, const char *> urlCharsToEncodeMap = {
+            { ' ', "%20" },
+            { '!', "%21" },
+            { '"', "%22" },
+            { '#', "%23" },
+            { '$', "%24" },
+            { '%', "%25" },
+            { '&', "%26" },
+            { '\'', "%27" },
+            { '(', "%28" },
+            { ')', "%29" },
+            { '*', "%2A" },
+            { '+', "%2B" },
+            { ',', "%2C" },
+            { '-', "%2D" },
+            { '.', "%2E" },
+            { '/', "%2F" },
+            { ':', "%3A" },
+            { ';', "%3B" },
+            { '<', "%3C" },
+            { '=', "%3D" },
+            { '>', "%3E" },
+            { '?', "%3F" },
+            { '@', "%40" },
+            { '[', "%5B" },
+            { '\\', "%5C" },
+            { ']', "%5D" },
+            { '^', "%5E" },
+            { '_', "%5F" },
+            { '`', "%60" },
+            { '{', "%7B" },
+            { '|', "%7C" },
+            { '}', "%7D" },
+            { '~', "%7E" },
+            // TODO support the pound and euro dollar signs
+        };
+
+        std::string encoded;
+        encoded.reserve(src.size());
+        for (auto it = src.begin(); it != src.end(); it++) {
+            if (urlCharsToEncodeMap.count(*it) > 0) {
+                encoded.append(urlCharsToEncodeMap.at(*it));
+            } else {
+                encoded.append(1, *it);
+            }
+        }
+        return encoded;
+    }
+
+    /**
+     * URL decode an input string
+     *
+     * @param[in] src string to decode
+     * @return decoded string
+     **/
+    static std::string urlDecode(const std::string &src) {
+        const std::map<std::string, char> urlCharsToDecodeMap = {
+            { "%20" , ' ' },
+            { "%21" , '!' },
+            { "%22" , '"' },
+            { "%23" , '#' },
+            { "%24" , '$' },
+            { "%25" , '%' },
+            { "%26" , '&' },
+            { "%27" , '\'' },
+            { "%28" , '(' },
+            { "%29" , ')' },
+            { "%2A" , '*' },
+            { "%2B" , '+' },
+            { "%2C" , ',' },
+            { "%2D" , '-' },
+            { "%2E" , '.' },
+            { "%2F" , '/' },
+            { "%3A" , ':' },
+            { "%3B" , ';' },
+            { "%3C" , '<' },
+            { "%3D" , '=' },
+            { "%3E" , '>' },
+            { "%3F" , '?' },
+            { "%40" , '@' },
+            { "%5B" , '[' },
+            { "%5C" , '\\' },
+            { "%5D" , ']' },
+            { "%5E" , '^' },
+            { "%5F" , '_' },
+            { "%60" , '`' },
+            { "%7B" , '{' },
+            { "%7C" , '|' },
+            { "%7D" , '}' },
+            { "%7E" , '~' },
+            // TODO support the pound and euro dollar signs
+        };
+
+        std::string decoded;
+        decoded.reserve(src.size());
+        for (size_t i = 0; i < src.size(); i++) {
+            if (src[i] == '%' && i + 3 <= src.size()) {
+                std::string key = src.substr(i, 3);
+                if (urlCharsToDecodeMap.count(key) > 0) {
+                    decoded.append(1, urlCharsToDecodeMap.at(key));
+                }
+                i += 2;
+            } else {
+                decoded.append(1, src[i]);
+            }
+        }
+        return decoded;
+    }
 };
 
 #endif //define __UTIL_HH__

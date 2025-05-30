@@ -10,4 +10,4 @@ Nexoedge uses the following open-source libraries:
 - Network communications: ZeroMQ
 - Storage interfaces: Samba
 - Redis client: hiredis
-
+- Immutable Storage Policy Management APIs: jwt-cpp

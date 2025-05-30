@@ -15,6 +15,7 @@ The recommended platforms are [Ubuntu 22.04 LTS][ubuntu2204] 64-bit Server, with
   - Glib-2.0, version 2.72.4
   - nlohmann json (`nlohmann-json3-dev`), version 3.10.5
   - libsodium (`libsodium-dev`), version 1.0.16
+  - OpenLDAP (`libldap-dev`), version 2.5.11
 - Coding-related
   - Netwide Assembler (`nasm`), v2.11.01 or above, for [Intel(R) Intelligent Storage Acceleration Library](https://github.com/01org/isa-l/blob/master/README.md)
   - `autoconf`
@@ -37,7 +38,7 @@ To install all the software on the platform,
 
 ```bash
 sudo apt update
-sudo apt install -y cmake g++ libssl-dev libboost-filesystem-dev libboost-system-dev libboost-timer-dev libboost-log-dev libboost-random-dev libboost-locale-dev libboost-regex-dev autoconf libtool nasm pkg-config libevent-dev uuid-dev redis-server redis-tools libxml2-dev libcpprest-dev libaprutil1-dev libapr1-dev libglib2.0-dev libjson-c-dev unzip curl nlohmann-json3-dev libcurl-ocaml-dev libsodium-dev
+sudo apt install -y cmake g++ libssl-dev libboost-filesystem-dev libboost-system-dev libboost-timer-dev libboost-log-dev libboost-random-dev libboost-locale-dev libboost-regex-dev autoconf libtool nasm pkg-config libevent-dev uuid-dev redis-server redis-tools libxml2-dev libcpprest-dev libaprutil1-dev libapr1-dev libglib2.0-dev libjson-c-dev unzip curl nlohmann-json3-dev libcurl-ocaml-dev libsodium-dev libldap-dev
 ```
 
 ### Configure Build Environment

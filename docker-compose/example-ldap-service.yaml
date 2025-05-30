@@ -1,0 +1,10 @@
+name: example-ldap-service 
+services:
+  openldap:
+    image: bitnami/openldap:2.6.10
+    environment:
+      LDAP_USERS: "customuser"
+      LDAP_PASSWORDS: "custompassword"
+      LDAP_ROOT: "dc=example,dc=org"
+    networks:
+      - nexoedge

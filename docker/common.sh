@@ -1,4 +1,4 @@
-TAG='v1.2.0'
+TAG='v1.2.1'
 DOCKER='sudo -E docker'
 
 NC='\033[0m'

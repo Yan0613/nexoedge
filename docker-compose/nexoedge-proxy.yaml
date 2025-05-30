@@ -1,3 +1,6 @@
+include:
+  - example-ldap-service.yaml
+
 name: nexoedge-proxy
 services:
   metastore:
@@ -35,15 +38,25 @@ services:
     image: ${NEXOEDGE_PROXY_IMAGE_NAME}:${TAG}
     ports:
       - ${NEXOEDGE_PROXY_PORT}:${NEXOEDGE_PROXY_PORT}
+      - ${NEXOEDGE_IMMUTABLE_MGT_API_PORT}:${NEXOEDGE_IMMUTABLE_MGT_API_PORT}
     environment:
       NCLOUD_PROXY_Metastore_Ip: "metastore"
       NCLOUD_PROXY_Metastore_Ssl_ca_cert_path: "/run/secrets/redis_ca_cert"
       NCLOUD_PROXY_Metastore_Ssl_client_cert_path: "/run/secrets/redis_client_cert"
       NCLOUD_PROXY_Metastore_Ssl_client_key_path: "/run/secrets/redis_client_key"
+      NCLOUD_PROXY_Immutable_mgt_apis_Enabled: "1"
+      NCLOUD_PROXY_Immutable_mgt_apis_Port: ${NEXOEDGE_IMMUTABLE_MGT_API_PORT}
+      NCLOUD_PROXY_Immutable_mgt_apis_Ssl_cert: "/run/secrets/immutable_mgt_api_cert"
+      NCLOUD_PROXY_Immutable_mgt_apis_Ssl_cert_key: "/run/secrets/immutable_mgt_api_cert_key"
+      NCLOUD_PROXY_Immutable_mgt_apis_Jwt_secret_key: "/run/secrets/immutable_mgt_api_jwt_secret_key"
+      NCLOUD_PROXY_Ldap_auth_Uri: "ldap://openldap:1389"
+      NCLOUD_PROXY_Ldap_auth_User_organization: "users"
+      NCLOUD_PROXY_Ldap_auth_Dn_suffix: "example.org"
       NCLOUD_PROXY_Reporter_db_Ip: "statsdb"
       NCLOUD_PROXY_Reporter_db_Port: "6379"
       NCLOUD_PROXY_Dedup_Enabled: "0"
       NCLOUD_GENERAL_Proxy01_Coord_port: ${NEXOEDGE_PROXY_PORT}
+      NCLOUD_GENERAL_Log_Glog_to_console: "1"
       NCLOUD_GENERAL_Network_Use_curve: "1"
       NCLOUD_GENERAL_Network_Proxy_curve_public_key_file: "/run/secrets/proxy_pkey"
       NCLOUD_GENERAL_Network_Proxy_curve_secret_key_file: "/run/secrets/proxy_skey"
@@ -59,11 +72,15 @@ services:
       - proxy_pkey
       - proxy_skey
       - agent_pkey
+      - immutable_mgt_api_cert
+      - immutable_mgt_api_cert_key
+      - immutable_mgt_api_jwt_secret_key
     networks:
       - nexoedge
     depends_on:
       - metastore
       - statsdb
+      - openldap
 
   reporter:
     image: ${NEXOEDGE_REPORTER_IMAGE_NAME}:${TAG}
@@ -107,3 +124,9 @@ secrets:
     file: redis_ssl/client.crt
   redis_client_key:
     file: redis_ssl/client.key
+  immutable_mgt_api_cert:
+    file: immutable_mgt_api/ssl.crt
+  immutable_mgt_api_cert_key:
+    file: immutable_mgt_api/ssl.key
+  immutable_mgt_api_jwt_secret_key:
+    file: immutable_mgt_api/jwt_secret_key

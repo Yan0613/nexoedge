@@ -30,12 +30,14 @@ RUN apt update \
       libglib2.0-0 \
       libgflags2.2 \
       libleveldb1d \
+      libldap-2.5-0 \
     && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
 # expose ports used by ncloud proxy
 EXPOSE 57002/tcp
 EXPOSE 59001/tcp
 EXPOSE 59002/tcp
+EXPOSE 59003/tcp
 
 # add and install packages
 ARG PACKAGE=nexoedge-amd64-proxy.deb

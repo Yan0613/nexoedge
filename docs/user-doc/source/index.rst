@@ -11,6 +11,7 @@ Nexoedge Documentation
    :caption: Contents:
 
    intro
+   immutable
    spec
    requirements
    quick_setup

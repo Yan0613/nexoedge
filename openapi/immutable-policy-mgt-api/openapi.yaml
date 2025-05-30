@@ -1,0 +1,322 @@
+openapi: 3.0.4
+info:
+  title: Nexoedge Immutable Storage Management APIs
+  description: |-
+    This is a set of APIs to manage the per-object storage policy of data in Nexoedge for immutability. Background of the immutable storage design of Nexoedge is available in the documentation.
+  contact:
+    email: nexoedge@lists.lfedge.org
+  license:
+    name: Apache 2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0.html
+  version: 1.2.1
+externalDocs:
+  url: https://github.com/nexoedge/nexoedge
+servers:
+  - url: http://{ip}:{port}
+    variables:
+      ip:
+        default: 'localhost'
+      port: 
+        default: '59003'
+tags:
+  - name: Authentication
+    description: Authenticate users for immutable storage policy management
+  - name: Policy inquiry
+    description: Retrieve policies of data objects
+  - name: Policy change
+    description: Modify policies of data objects
+paths:
+  /login:
+    post:
+      tags:
+        - Authentication
+      summary: Authenticate the administrators and provide an authentication token for API access that is valid for one hour.
+      operationId: auth
+      requestBody:
+        description: Administrator credentials
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Credentials'
+        required: true
+      responses:
+        '200':
+          description: Authentication succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '400':
+          $ref: "#/components/responses/Error"
+        '401':
+          description: Invalid credentials
+  /get:
+    get:
+      tags:
+        - Policy inquiry
+      summary: Retrieve any existing policy of a specific type and data object.
+      operationId: getPolicy
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Filename'
+        - $ref: '#/components/parameters/PolicyType'
+        - $ref: '#/components/parameters/User'
+      responses:
+        '200':
+          description: Inquiry succeeded
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/Policy'
+                - {}
+        '400':
+          $ref: "#/components/responses/Error"
+        '401':
+          description: Invalid credentials
+  /getall:
+    get:
+      tags:
+        - Policy inquiry
+      summary: Retrieve all existing policy of a data object.
+      operationId: getAllPolicy
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/Filename'
+        - $ref: '#/components/parameters/User'
+      responses:
+        '200':
+          description: Inquiry succeeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Policies'
+        '400':
+          $ref: "#/components/responses/Error"
+        '401':
+          description: Invalid credentials
+  /set:
+    post:
+      tags:
+        - Policy change
+      summary: Set a policy for a data object
+      operationId: setPolicy
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/User'
+      requestBody:
+        $ref: '#/components/requestBodies/PolicyChange'
+      responses:
+        '200':
+          description: Change request handled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+        '400':
+          $ref: "#/components/responses/Error"
+        '401':
+          description: Invalid credentials
+  /extend:
+    post:
+      tags:
+        - Policy change
+      summary: Extend an existing policy for a data object
+      operationId: extendPolicy
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/User'
+      requestBody:
+        $ref: '#/components/requestBodies/PolicyChange'
+      responses:
+        '200':
+          description: Change request handled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+        '400':
+          $ref: "#/components/responses/Error"
+        '401':
+          description: Invalid credentials
+  /renew:
+    post:
+      tags:
+        - Policy change
+      summary: Update the auto renew state of an existing policy for a data object
+      operationId: renewPolicy
+      security:
+        - apiKey: []
+      parameters:
+        - $ref: '#/components/parameters/User'
+      requestBody:
+        $ref: '#/components/requestBodies/PolicyRenewChange'
+      responses:
+        '200':
+          description: Change request handled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Result'
+        '400':
+          $ref: "#/components/responses/Error"
+        '401':
+          description: Invalid credentials
+
+components:
+  schemas:
+    Credentials:
+      type: object
+      properties:
+        user:
+          type: string
+          example: "admin"
+          description: Username of the administrator
+        password:
+          type: string
+          example: "admin"
+          description: Password of the administrator
+      description: Credentials of the administrator
+    AuthToken:
+      type: object
+      properties:
+        token:
+          type: string
+      description: Authentication token obtained via the authentication API
+    FileName:
+      type: string
+      example: "my_path/my_object.txt"
+      description: Name of the data object
+    PolicyType:
+      type: string
+      description: Type of the policy
+      enum:
+        - "immutable"
+        - "modification-hold"
+        - "deletion-hold"
+        - "access-hold"
+    PolicyStartDate:
+      type: string
+      format: date-time
+      description: Start date of the policy in RFC 7231
+      example: "Wed, 06 May 2025 00:00:00 GMT"
+    PolicyDuration:
+      type: integer
+      format: int16
+      description: Period of the policy since its start date in number of days
+      example: 14
+    PolicyAutoRenew:
+      type: boolean
+      description: Automatic renew status of the policy
+      example: "true"
+    Policy:
+      type: object
+      properties:
+        type:
+          $ref: '#/components/schemas/PolicyType'
+        period:
+          $ref: '#/components/schemas/PolicyDuration'
+        start_date:
+          $ref: '#/components/schemas/PolicyStartDate'
+        auto_renew:
+          $ref: '#/components/schemas/PolicyAutoRenew'
+      description: Immutable Policy
+    Policies:
+      type: array
+      items:
+        $ref: '#/components/schemas/Policy'
+      description: Policy attributes
+    PolicyChange:
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/FileName'
+        policy:
+          $ref: '#/components/schemas/Policy'
+      required:
+        - name
+        - policy
+    PolicyRenewChange:
+      type: object
+      properties:
+        name:
+          $ref: '#/components/schemas/FileName'
+        policy:
+          type: object
+          properties:
+            type:
+              $ref: '#/components/schemas/PolicyType'
+            auto_renew:
+              $ref: '#/components/schemas/PolicyAutoRenew'
+      required:
+        - name
+        - policy
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
+    Result:
+      type: object
+      properties:
+        result:
+          type: string
+          enum:
+            - "success"
+            - "failed"
+      required:
+        - result
+  requestBodies:
+    PolicyChange:
+      required: true
+      content: 
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PolicyChange'
+    PolicyRenewChange:
+      required: true
+      content: 
+        application/json:
+          schema:
+            $ref: '#/components/schemas/PolicyRenewChange'
+  responses:
+    Error:
+      description: Invalid parameters / request path
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  parameters:
+    User:
+      name: user
+      in: header
+      description: Username
+      required: true
+      schema:
+        type: string
+    Filename:
+      name: name
+      in: query
+      description: Name of the data object to inquire
+      required: true
+      schema:
+        $ref: '#/components/schemas/FileName'
+    PolicyType:
+      name: type
+      in: query
+      description: Type of the policy
+      required: true
+      schema:
+        $ref: '#/components/schemas/PolicyType'
+  securitySchemes:
+    apiKey:
+      type: apiKey
+      name: auth_token
+      in: header
+      description: Authentication token obtained via the authentication API
