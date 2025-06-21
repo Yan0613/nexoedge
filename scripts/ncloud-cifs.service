@@ -1,0 +1,14 @@
+# script setting from https://wiki.samba.org/index.php/Managing_the_Samba_AD_DC_Service_Using_Systemd#Creating_the_systemd_Service_File
+
+[Unit]
+Description=Samba (with nCloud support)
+After=network.target remote-fs.target nss-lookup.target
+
+[Service]
+Type=forking
+ExecStart=/usr/local/samba/sbin/smbd
+PIDFile=/usr/local/samba/var/run/smbd.pid
+ExecReload=/bin/kill -HUP $MAINPID
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,9 @@
+smaba的账号：
+user：ymx
+password：123456
+
+smbclient -U ncloud --password 123456 //127.0.0.1/ncloud -c "/home/ymx/nexoedge/test.txt"
+
+sudo service ncloud-cifs starsystemctl status ncloud-cifst
+
+sudo service ncloud-cifs status
